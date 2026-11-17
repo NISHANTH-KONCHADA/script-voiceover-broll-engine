@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "script-voiceover-broll-engine"
+version = "0.1.0"
+description = "IncuBrix 2027 PS3: Script, Voiceover & B-roll Video Engine"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Nishanth Konchada", email = "candidate@incubrix.internal" }
+]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "sqlalchemy>=2.0.30",
+    "aiosqlite>=0.20.0",
+    "boto3>=1.34.0",
+    "botocore>=1.34.0",
+    "pyyaml>=6.0.1",
+    "httpx>=0.27.0",
+    "tenacity>=8.5.0",
+    "python-multipart>=0.0.9"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0"
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = [
+    "ignore::DeprecationWarning"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

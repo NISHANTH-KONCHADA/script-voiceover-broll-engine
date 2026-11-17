@@ -1,0 +1,86 @@
+services:
+  # IncuBrix B-roll Video Engine Service
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: incubrix-broll-engine
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=development
+      - APP_DEBUG=true
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8000
+      - DATABASE_URL=sqlite+aiosqlite:///data/jobs.db
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY_ID=minioadmin
+      - S3_SECRET_ACCESS_KEY=minioadmin
+      - S3_BUCKET_NAME=broll-engine-bucket
+      - S3_REGION=us-east-1
+      - S3_SECURE=false
+      - WEBHOOK_SECRET=test-webhook-hmac-secret-key-32chars
+    volumes:
+      - app_data:/app/data
+      - ./tmp:/app/tmp
+      - ./outputs:/app/outputs
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # S3-Compatible MinIO Storage Service
+  minio:
+    image: minio/minio:latest
+    container_name: incubrix-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  # Initialization helper to automatically create the S3 bucket in MinIO
+  minio-init:
+    image: minio/mc:latest
+    container_name: incubrix-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb --ignore-existing local/broll-engine-bucket;
+      /usr/bin/mc anonymous set download local/broll-engine-bucket;
+      exit 0;
+      "
+
+  # One-command test runner (runs all tests completely offline with 0 API keys)
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: incubrix-broll-test
+    environment:
+      - APP_ENV=test
+      - DATABASE_URL=sqlite+aiosqlite:///:memory:
+    entrypoint: ["pytest", "-v", "tests/"]
+    profiles:
+      - test
+
+volumes:
+  app_data:
+  minio_data:

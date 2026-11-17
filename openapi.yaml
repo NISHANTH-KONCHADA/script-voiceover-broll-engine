@@ -1,0 +1,441 @@
+openapi: 3.1.0
+info:
+  title: IncuBrix B-roll Video Engine API
+  description: Automated Script and Voiceover to B-roll Video Engine (IncuBrix Assessment
+    3 / PS3)
+  version: 0.1.0
+paths:
+  /health:
+    get:
+      tags:
+      - Health & Diagnostics
+      summary: Liveness Probe
+      description: Returns basic liveness status confirming process is accepting HTTP
+        traffic.
+      operationId: liveness_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivenessResponse'
+  /ready:
+    get:
+      tags:
+      - Health & Diagnostics
+      summary: Readiness Probe
+      description: Verifies operational readiness of database and object storage dependencies.
+      operationId: readiness_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+  /api/v1/broll/jobs:
+    post:
+      tags:
+      - B-roll Jobs
+      summary: Submit B-roll Video Generation Job
+      description: Asynchronously queues video generation from audio or script. Enforces
+        Idempotency-Key header for safe retries.
+      operationId: create_broll_job_api_v1_broll_jobs_post
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Unique client key for safe request retry
+          title: Idempotency-Key
+        description: Unique client key for safe request retry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobCreateRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}:
+    get:
+      tags:
+      - B-roll Jobs
+      summary: Get Job Status and Results
+      description: Returns processing status, progress percentage (0-100), stage,
+        and output download links.
+      operationId: get_job_status_api_v1_jobs__job_id__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs:
+    get:
+      tags:
+      - B-roll Jobs
+      summary: List Recent Jobs
+      description: Returns a paginated list of recently submitted jobs.
+      operationId: list_jobs_api_v1_jobs_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobDetailResponse'
+                title: Response List Jobs Api V1 Jobs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    AspectRatio:
+      type: string
+      enum:
+      - '16:9'
+      - '9:16'
+      - '1:1'
+      title: AspectRatio
+    CaptionOptions:
+      properties:
+        burn_in:
+          type: boolean
+          title: Burn In
+          description: Burn subtitles directly onto video frames
+          default: true
+        srt:
+          type: boolean
+          title: Srt
+          description: Generate standalone SubRip .srt sidecar file
+          default: true
+      type: object
+      title: CaptionOptions
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    JobCreateRequest:
+      properties:
+        audio_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Audio Url
+          description: Direct URL to pre-recorded audio file (mp3, wav, m4a)
+        script:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Script
+          description: Plain text script for narration synthesis
+        scenes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/SceneHint'
+            type: array
+          - type: 'null'
+          title: Scenes
+          description: Pre-segmented IncuBrix scene list with hints
+        voice:
+          type: string
+          title: Voice
+          description: TTS voice identifier for text input
+          default: en-IN-female
+        aspect_ratios:
+          items:
+            $ref: '#/components/schemas/AspectRatio'
+          type: array
+          minItems: 1
+          title: Aspect Ratios
+          description: Target aspect ratios
+          default:
+          - '16:9'
+        style:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Style
+          description: Aesthetic style description
+          default: bright, modern, real-world footage
+        avoid:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Avoid
+          description: Negative visual concepts or content to avoid
+        captions:
+          $ref: '#/components/schemas/CaptionOptions'
+          description: Caption generation preferences
+        callback_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Callback Url
+          description: Optional webhook URL called upon job completion
+      type: object
+      title: JobCreateRequest
+      description: Payload for POST /api/v1/broll/jobs.
+    JobCreateResponse:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+          description: Unique job identifier
+        status:
+          $ref: '#/components/schemas/JobStatus'
+          description: Initial job status
+          default: queued
+        progress:
+          type: integer
+          maximum: 100.0
+          minimum: 0.0
+          title: Progress
+          description: Processing progress percentage
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: UTC creation timestamp
+        check_status_url:
+          type: string
+          title: Check Status Url
+          description: Direct status endpoint URL
+      type: object
+      required:
+      - job_id
+      - created_at
+      - check_status_url
+      title: JobCreateResponse
+      description: Response returned upon successful job enqueueing (HTTP 202).
+    JobDetailResponse:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: integer
+          maximum: 100.0
+          minimum: 0.0
+          title: Progress
+        stage:
+          type: string
+          title: Stage
+          description: Current engine pipeline stage
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+        outputs:
+          anyOf:
+          - $ref: '#/components/schemas/JobOutputs'
+          - type: 'null'
+        error:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - job_id
+      - status
+      - progress
+      - stage
+      - created_at
+      - updated_at
+      title: JobDetailResponse
+      description: Full job details returned by GET /api/v1/jobs/{job_id}.
+    JobOutputs:
+      properties:
+        videos:
+          additionalProperties:
+            type: string
+          type: object
+          title: Videos
+          description: Map of aspect_ratio to video download URL
+        captions:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Captions
+          description: Download URL for captions.srt
+        timeline:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timeline
+          description: Download URL for timeline.json
+        manifest:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Manifest
+          description: Download URL for manifest.json
+      type: object
+      title: JobOutputs
+      description: Download links to generated media artifacts.
+    JobStatus:
+      type: string
+      enum:
+      - queued
+      - running
+      - succeeded
+      - failed
+      title: JobStatus
+    LivenessResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+          default: ok
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+          example: '2026-11-18T10:00:00Z'
+        version:
+          type: string
+          title: Version
+          default: 0.1.0
+          example: 0.1.0
+      type: object
+      required:
+      - timestamp
+      title: LivenessResponse
+    ReadinessResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+          default: ready
+          example: ready
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+        dependencies:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Dependencies
+      type: object
+      required:
+      - timestamp
+      - dependencies
+      title: ReadinessResponse
+    SceneHint:
+      properties:
+        text:
+          type: string
+          minLength: 1
+          title: Text
+          description: Narration line for scene
+        visual_hint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Visual Hint
+          description: Director guidance for footage search
+      type: object
+      required:
+      - text
+      title: SceneHint
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
