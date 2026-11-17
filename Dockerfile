@@ -9,10 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python requirements
 COPY pyproject.toml .
+
+# Copy source code before installing the package
+COPY src/ ./src/
+
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir ".[dev]"
+
+# Copy remaining project files
+COPY . .
 
 # Copy application source
 COPY src/ ./src/
