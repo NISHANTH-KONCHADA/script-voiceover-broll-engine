@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, description="Port to bind API server")
     log_level: str = Field(default="INFO", description="Log level (DEBUG, INFO, WARNING, ERROR)")
 
-    # Webhook signature secret
+    # Security & Webhook Signatures
     webhook_secret: str = Field(
         default="default-test-webhook-hmac-secret-key-32chars",
         description="HMAC secret used to sign outbound callback notifications"
@@ -38,8 +38,22 @@ class Settings(BaseSettings):
     s3_region: str = Field(default="us-east-1", description="S3 region")
     s3_secure: bool = Field(default=False, description="Use SSL/TLS for S3 connections")
 
+    # Speech Processing: ASR (faster-whisper)
+    asr_provider: str = Field(default="mock", description="ASR engine: 'faster-whisper' or 'mock'")
+    whisper_model_size: str = Field(default="small", description="Whisper model: tiny, base, small, medium")
+    whisper_device: str = Field(default="cpu", description="Whisper compute device: cpu or cuda")
+    whisper_compute_type: str = Field(default="int8", description="Whisper quantization: int8, float32, float16")
+
+    # Speech Processing: TTS (edge-tts)
+    tts_provider: str = Field(default="mock", description="TTS engine: 'edge-tts' or 'mock'")
+    default_voice_en_in: str = Field(default="en-IN-NeerjaNeural", description="Default Indian English voice")
+    default_voice_hi_in: str = Field(default="hi-IN-SwaraNeural", description="Default Hindi voice")
+    default_voice_ta_in: str = Field(default="ta-IN-PallaviNeural", description="Default Tamil voice")
+    default_voice_en_us: str = Field(default="en-US-JennyNeural", description="Default US English voice")
+
     # Processing limits & defaults
-    max_audio_duration_seconds: int = Field(default=600, description="Maximum accepted audio duration in seconds")
+    max_audio_duration_seconds: float = Field(default=600.0, description="Maximum accepted audio duration in seconds (10 min)")
+    min_audio_duration_seconds: float = Field(default=0.5, description="Minimum accepted audio duration in seconds")
     min_scene_duration_seconds: float = Field(default=1.8, description="Minimum scene length in seconds")
     max_scene_duration_seconds: float = Field(default=5.0, description="Maximum scene length in seconds")
     default_fps: int = Field(default=30, description="Standard video output framerate")

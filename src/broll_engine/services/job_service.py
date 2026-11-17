@@ -29,6 +29,8 @@ class JobService:
         if record.outputs:
             outputs = JobOutputs(
                 videos=record.outputs.get("videos", {}),
+                audio=record.outputs.get("audio"),
+                transcript=record.outputs.get("transcript"),
                 captions=record.outputs.get("captions"),
                 timeline=record.outputs.get("timeline"),
                 manifest=record.outputs.get("manifest"),
@@ -88,7 +90,6 @@ class JobService:
         if background_tasks:
             background_tasks.add_task(self.worker.execute_job, job_id, payload_dict)
         else:
-            # Fallback if no FastAPI background_tasks object passed (e.g. CLI/tests)
             import asyncio
             asyncio.create_task(self.worker.execute_job, job_id, payload_dict)
 

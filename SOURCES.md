@@ -7,7 +7,7 @@ Every model, API, library, dataset, and media source used in this project is dis
 
 ---
 
-## 1. Core Runtime Libraries (Phase 1)
+## 1. Core Runtime & Infrastructure Libraries
 
 | Library / Tool | Version | License | Commercial Use Permitted? | Purpose in Project |
 | :--- | :--- | :--- | :--- | :--- |
@@ -24,7 +24,18 @@ Every model, API, library, dataset, and media source used in this project is dis
 
 ---
 
-## 2. Infrastructure & Storage Components
+## 2. Speech Processing & Narration Stack (Phase 2)
+
+| Component | Library / Model | License | Commercial Use Status | Notes & Verification |
+| :--- | :--- | :--- | :--- | :--- |
+| **Speech-to-Text (ASR)** | `faster-whisper` (v1.2.1) + `ctranslate2` | MIT License | **Fully Commercial Permitted** | FasterWhisper and CTranslate2 are permissively licensed under MIT. The underlying OpenAI Whisper model weights (`small`, `medium`) are also MIT-licensed, allowing commercial inference. |
+| **Voice Activity Detection** | Silero VAD energy / frame analysis | MIT License | **Fully Commercial Permitted** | Integrated in `AudioPreflightValidator` for pre-ASR speech presence verification and silence filtering. |
+| **Text-to-Speech (TTS Engine)** | `edge-tts` (v7.3.1) | LGPL-3.0 | **Permitted for Assessment & Self-Hosted** | `edge-tts` communicates with Microsoft's speech synthesis endpoints. The Python package is open-source (LGPL-3.0).<br>**Commercial Terms Note:** Microsoft Azure terms require an Azure Cognitive Services Speech API subscription for high-volume enterprise commercial production. Our engine isolates TTS behind the `TTSProvider` abstract interface, allowing seamless drop-in swapping between `edge-tts`, Azure Speech API, ElevenLabs, or self-hosted open-source models (such as Kokoro or Piper). |
+| **Audio I/O & Manipulation** | `soundfile` (0.14.0) + `pydub` (0.25.1) + `audioop-lts` | BSD / MIT | **Fully Commercial Permitted** | Decodes WAV, MP3, M4A headers and provides frame energy calculations. |
+
+---
+
+## 3. Infrastructure & Storage Components
 
 | Component | Image / Package | License | Compliance Strategy |
 | :--- | :--- | :--- | :--- |
@@ -33,7 +44,7 @@ Every model, API, library, dataset, and media source used in this project is dis
 
 ---
 
-## 3. Reference Frameworks
+## 4. Reference Frameworks
 
 | Project | Author | License | Usage in Project |
 | :--- | :--- | :--- | :--- |

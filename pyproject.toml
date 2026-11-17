@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "script-voiceover-broll-engine"
-version = "0.1.0"
+version = "0.2.0"
 description = "IncuBrix 2027 PS3: Script, Voiceover & B-roll Video Engine"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,14 +16,19 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.8.0",
     "pydantic-settings>=2.4.0",
-    "sqlalchemy[asyncio]>=2.0.30",
+    "sqlalchemy>=2.0.30",
     "aiosqlite>=0.20.0",
     "boto3>=1.34.0",
     "botocore>=1.34.0",
     "pyyaml>=6.0.1",
     "httpx>=0.27.0",
     "tenacity>=8.5.0",
-    "python-multipart>=0.0.9"
+    "python-multipart>=0.0.9",
+    "edge-tts>=7.0.0",
+    "faster-whisper>=1.0.0",
+    "soundfile>=0.12.0",
+    "pydub>=0.25.1",
+    "audioop-lts>=0.2.0; python_version>='3.13'"
 ]
 
 [project.optional-dependencies]
