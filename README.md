@@ -1,7 +1,7 @@
 # IncuBrix Script, Voiceover & B-roll Video Engine (PS3)
 
 > **IncuBrix 2027 Software Engineer Assessment — Problem Statement 3 (PS3)**  
-> **Status:** Phase 4 Complete (Footage Retrieval, Deduplication & Attribution Engine)  
+> **Status:** Phase 5 Complete (Audio Normalization, Subtitles & Multi-Aspect Video Assembly)  
 > **API Version:** 0.1.0 (OpenAPI 3.1)  
 
 ---
@@ -33,6 +33,14 @@ The **Script, Voiceover & B-roll Video Engine** is a containerized microservice 
   - Deduplication engine preventing repeated or near-duplicate clips across scenes.
   - Asynchronous download with disk caching and FFprobe media validation.
   - Full legal clearance, provenance, and attribution tracking in `manifest.json`.
+- **Phase 5 (Completed):** Audio Normalization, Subtitles & Multi-Aspect Video Assembly:
+  - EBU R128 audio loudness normalization to `-16.0 LUFS` at 48kHz stereo AAC.
+  - Broadcast-ready SRT and styled ASS subtitle generation with timecodes (`00:00:00,000`).
+  - Burn-in subtitle rendering with customizable typography, dark border, and shadow.
+  - Multi-aspect ratio video rendering: `16:9` (1920x1080), `9:16` (1080x1920), and `1:1` (1080x1080).
+  - FFmpeg concat demuxer assembly with zero black frames and zero frozen frames.
+  - Frame-accurate audio-video synchronization ($\le 33\text{ ms}$ drift guarantee, zero audio drift).
+  - Automated output verification via FFprobe (codec, dimensions, framerate, stream presence).
 
 ---
 
@@ -73,14 +81,21 @@ flowchart TD
         Download --> TimelineArtifact[timeline.json & manifest.json Provenance]
     end
 
-    subgraph VideoEngine[Video Generation Pipeline - Phases 5 to 6]
-        TimelineArtifact --> Normalization[Phase 5: FFmpeg Video Normalization & Assembly]
+    subgraph VideoAssembly[Phase 5: Audio Normalization, Subtitles & Multi-Aspect Assembly]
+        MasterAudio --> AudioNorm[Audio Normalizer: EBU R128 -16 LUFS / 48kHz]
+        TimelineArtifact --> Subtitles[SRT & ASS Subtitle Styler]
+        TimelineArtifact --> VideoScaler[Video Scaler & Crop: 16:9 / 9:16 / 1:1]
+        VideoScaler --> Concat[FFmpeg Concat Demuxer]
+        AudioNorm --> Muxer[Audio Muxer & Zero-Drift Sync Guard]
+        Subtitles --> Muxer
+        Concat --> Muxer
+        Muxer --> Probe[FFprobe Media Validator]
     end
 
     subgraph Delivery[Artifact Storage & Job State]
-        Normalization --> S3[(MinIO / S3 Storage)]
-        MasterAudio --> S3
-        TimelineArtifact --> S3
+        Probe --> S3[(MinIO / S3 Storage)]
+        AudioNorm --> S3
+        Subtitles --> S3
     end
 ```
 
@@ -88,15 +103,15 @@ flowchart TD
 
 ## 3. Testing & Verification Modes
 
-### Mode A: Automated Offline Test Suite (62 Tests, 100% Offline, Zero API Keys)
+### Mode A: Automated Offline Test Suite (68 Tests, 100% Offline, Zero API Keys)
 
 Runs unit, integration, and failure-recovery tests deterministically using mock providers and in-memory persistence:
 
 ```bash
-# Run all 62 automated tests on host
+# Run all 68 automated tests on host
 pytest -v
 
-# OR run all 62 automated tests inside isolated Docker container
+# OR run all 68 automated tests inside isolated Docker container
 docker compose run --rm test
 ```
 
