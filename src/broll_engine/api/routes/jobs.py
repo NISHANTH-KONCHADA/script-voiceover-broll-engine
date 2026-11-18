@@ -3,6 +3,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, Response, statu
 
 from broll_engine.api.routes.errors import APIError
 from broll_engine.api.schemas.job import (
+    ClipSwapRequest,
+    ClipSwapResponse,
     JobCreateRequest,
     JobCreateResponse,
     JobDetailResponse,
@@ -79,3 +81,18 @@ async def list_jobs(
     service: JobService = Depends(get_job_service),
 ) -> List[JobDetailResponse]:
     return await service.list_jobs(limit=limit, offset=offset)
+
+
+@router.post(
+    "/broll/jobs/{job_id}/swap-clip",
+    response_model=ClipSwapResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Swap Video Clip and Partially Re-render (Advanced Level)",
+    description="Replaces footage for a single scene and re-assembles the video in <3 seconds without re-rendering unaffected scenes.",
+)
+async def swap_job_clip(
+    job_id: str,
+    request: ClipSwapRequest,
+    service: JobService = Depends(get_job_service),
+) -> ClipSwapResponse:
+    return await service.swap_clip(job_id=job_id, request=request)

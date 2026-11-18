@@ -28,6 +28,7 @@ scratch/
 *.log
 data/
 minio_data/
+tests/fixtures/batch_output/
 
 # OS and Editor
 .DS_Store

@@ -138,6 +138,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/broll/jobs/{job_id}/swap-clip:
+    post:
+      tags:
+      - B-roll Jobs
+      summary: Swap Video Clip and Partially Re-render (Advanced Level)
+      description: Replaces footage for a single scene and re-assembles the video
+        in <3 seconds without re-rendering unaffected scenes.
+      operationId: swap_job_clip_api_v1_broll_jobs__job_id__swap_clip_post
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClipSwapRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClipSwapResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     AspectRatio:
@@ -161,6 +195,85 @@ components:
           default: true
       type: object
       title: CaptionOptions
+    ClipSwapRequest:
+      properties:
+        scene_index:
+          type: integer
+          minimum: 0.0
+          title: Scene Index
+          description: 0-indexed scene to replace
+        new_clip_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: New Clip Url
+          description: Direct URL to replacement video clip
+        new_query:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: New Query
+          description: New visual search query to retrieve replacement clip
+        style:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Style
+          description: Optional style override
+      type: object
+      required:
+      - scene_index
+      title: ClipSwapRequest
+      description: Payload for POST /api/v1/broll/jobs/{job_id}/swap-clip.
+    ClipSwapResponse:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+          description: Unique job identifier
+        status:
+          $ref: '#/components/schemas/JobStatus'
+          description: Job status
+          default: succeeded
+        scene_index:
+          type: integer
+          title: Scene Index
+          description: Index of replaced scene
+        re_rendered_scene_id:
+          type: string
+          title: Re Rendered Scene Id
+          description: ID of replaced scene
+        previous_clip_id:
+          type: string
+          title: Previous Clip Id
+          description: Asset ID of previous clip
+        new_clip_id:
+          type: string
+          title: New Clip Id
+          description: Asset ID of new replacement clip
+        processing_time_seconds:
+          type: number
+          title: Processing Time Seconds
+          description: Wall-clock time for partial re-render in seconds
+        outputs:
+          $ref: '#/components/schemas/JobOutputs'
+          description: Updated media download URLs
+        message:
+          type: string
+          title: Message
+          default: Scene successfully replaced and video re-rendered
+      type: object
+      required:
+      - job_id
+      - scene_index
+      - re_rendered_scene_id
+      - previous_clip_id
+      - new_clip_id
+      - processing_time_seconds
+      - outputs
+      title: ClipSwapResponse
+      description: Response returned upon successful scene replacement and partial
+        re-render.
     HTTPValidationError:
       properties:
         detail:
@@ -231,6 +344,12 @@ components:
           - type: 'null'
           title: Callback Url
           description: Optional webhook URL called upon job completion
+        webhook_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Webhook Secret
+          description: Optional custom shared secret for HMAC-SHA256 callback signing
       type: object
       title: JobCreateRequest
       description: Payload for POST /api/v1/broll/jobs.
@@ -361,6 +480,12 @@ components:
           - type: 'null'
           title: Manifest
           description: Download URL for manifest.json
+        quality_report:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Quality Report
+          description: Download URL for quality_report.json (Phase 6)
       type: object
       title: JobOutputs
       description: Download links to generated media artifacts.

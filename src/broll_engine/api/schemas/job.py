@@ -80,3 +80,24 @@ class JobDetailResponse(BaseModel):
     completed_at: Optional[datetime] = None
     outputs: Optional[JobOutputs] = None
     error: Optional[Dict[str, Any]] = None
+
+
+class ClipSwapRequest(BaseModel):
+    """Payload for POST /api/v1/broll/jobs/{job_id}/swap-clip."""
+    scene_index: int = Field(..., ge=0, description="0-indexed scene to replace")
+    new_clip_url: Optional[str] = Field(default=None, description="Direct URL to replacement video clip")
+    new_query: Optional[str] = Field(default=None, description="New visual search query to retrieve replacement clip")
+    style: Optional[str] = Field(default=None, description="Optional style override")
+
+
+class ClipSwapResponse(BaseModel):
+    """Response returned upon successful scene replacement and partial re-render."""
+    job_id: str = Field(..., description="Unique job identifier")
+    status: JobStatus = Field(default=JobStatus.SUCCEEDED, description="Job status")
+    scene_index: int = Field(..., description="Index of replaced scene")
+    re_rendered_scene_id: str = Field(..., description="ID of replaced scene")
+    previous_clip_id: str = Field(..., description="Asset ID of previous clip")
+    new_clip_id: str = Field(..., description="Asset ID of new replacement clip")
+    processing_time_seconds: float = Field(..., description="Wall-clock time for partial re-render in seconds")
+    outputs: JobOutputs = Field(..., description="Updated media download URLs")
+    message: str = Field(default="Scene successfully replaced and video re-rendered")
