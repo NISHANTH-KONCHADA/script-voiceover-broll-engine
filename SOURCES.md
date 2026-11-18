@@ -47,7 +47,19 @@ Every model, API, library, dataset, and media source used in this project is dis
 
 ---
 
-## 4. Testing Modes & Verification Isolation
+## 4. Footage Providers, Licensing & Attribution Stack (Phase 4)
+
+| Provider / Asset Source | Official Licence | Licence Terms URL | Commercial Clearance Verification | Attribution & Provenance Handling |
+| :--- | :--- | :--- | :--- | :--- |
+| **Pexels Video API** | Pexels License | https://www.pexels.com/license/ | **Verified Commercial Permitted:** All videos on Pexels are free for commercial and non-commercial projects. Reselling unaltered copies, implying brand endorsement, or sensitive/offensive portrayals of people are prohibited. | Attribution is legally optional under Pexels terms but captured and credited in `timeline.json` and `manifest.json` as best practice: `Video by {creator} on Pexels`. |
+| **Pixabay Video API** | Pixabay Content License | https://pixabay.com/service/license-summary/ | **Verified Commercial Permitted:** Content is cleared for commercial and non-commercial print and digital media. Prohibits standalone redistribution of media assets on other stock libraries. | Captured in `manifest.json`: `Video by {user} from Pixabay`. Direct creator URL and original page links recorded. |
+| **Procedural Fallback Generator** | Procedural (Commercial CC0 Equivalent) | Internal / In-House | **100% Free & Unrestricted:** Generated deterministically on-the-fly via FFmpeg shader/filtergraph pipelines (`gradients`, `lavfi`). Zero third-party copyright, zero intellectual property encumbrances. | Attribution recorded as `Procedural visual synthesized by IncuBrix B-roll Engine`. Clearly flagged with `is_procedural=True` and `fallback_status="procedural_gradient"`. |
+| **Deduplication Engine** | Proprietary / In-House | Internal | **Assessment Compliant:** Enforces zero repeated clips across scenes using asset IDs, content hashes (SHA-256), and near-duplicate Jaccard/token similarity filters. | Deduplication audit trail persisted in `manifest.json` under `deduplication` object. |
+| **FFprobe Media Validator** | FFprobe 7.1.5 (GPL) | https://ffmpeg.org/legal.html | **Container Isolation:** Executed as external subprocess/CLI tool inside Docker image; no proprietary code links statically against libavformat/libavcodec. | Validates codec, resolution, and non-zero duration before committing clips to the timeline. |
+
+---
+
+## 5. Testing Modes & Verification Isolation
 
 To uphold honest and transparent performance metrics, the project strictly distinguishes between unit/CI test execution and live model inference:
 
@@ -67,7 +79,7 @@ To uphold honest and transparent performance metrics, the project strictly disti
 
 ---
 
-## 5. Infrastructure & Storage Components
+## 6. Infrastructure & Storage Components
 
 | Component | Image / Package | License | Compliance Strategy |
 | :--- | :--- | :--- | :--- |
@@ -76,7 +88,7 @@ To uphold honest and transparent performance metrics, the project strictly disti
 
 ---
 
-## 6. Reference Frameworks
+## 7. Reference Frameworks
 
 | Project | Author | License | Usage in Project |
 | :--- | :--- | :--- | :--- |

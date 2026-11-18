@@ -1,7 +1,7 @@
 # IncuBrix Script, Voiceover & B-roll Video Engine (PS3)
 
 > **IncuBrix 2027 Software Engineer Assessment — Problem Statement 3 (PS3)**  
-> **Status:** Phase 3 Complete (Semantic Scene Segmentation & Contextual Visual Intelligence)  
+> **Status:** Phase 4 Complete (Footage Retrieval, Deduplication & Attribution Engine)  
 > **API Version:** 0.1.0 (OpenAPI 3.1)  
 
 ---
@@ -24,6 +24,15 @@ The **Script, Voiceover & B-roll Video Engine** is a containerized microservice 
   - Safety constraints avoiding real identifiable human faces, celebrity faces, copyrighted logos, and watermarks, combined with custom user negative prompts (`avoid` list).
   - Explicit timing provenance tracking: distinct `asr_acoustic` vs `tts_interpolated` metadata.
   - Full output artifact generation: `scenes.json` and enriched `timeline.json` uploaded to S3/MinIO.
+- **Phase 4 (Completed):** Footage Retrieval, Deduplication & Attribution Engine:
+  - Multi-source stock footage retrieval integrating Pexels and Pixabay Video APIs.
+  - Automatic provider failover, rate-limit backoff, and timeouts.
+  - Deterministic procedural motion graphics fallback via FFmpeg (guaranteeing zero job failures).
+  - Strict commercial-use licence verification (rejecting non-commercial or unclear rights).
+  - Modular semantic relevance ranking with homonym conflict penalties.
+  - Deduplication engine preventing repeated or near-duplicate clips across scenes.
+  - Asynchronous download with disk caching and FFprobe media validation.
+  - Full legal clearance, provenance, and attribution tracking in `manifest.json`.
 
 ---
 
@@ -50,18 +59,28 @@ flowchart TD
         Seg --> Pacing[Pacing Guard: 1.8s - 5.0s\nZero Gaps & Overlaps]
         Pacing --> Disambig[Contextual Query Disambiguator\nHomonyms & Abstract Metaphors]
         Disambig --> Safety[Safety & Negative Constraints]
-        Safety --> ScenesArtifact[scenes.json & timeline.json]
+        Safety --> ScenesArtifact[scenes.json]
     end
 
-    subgraph VideoEngine[Video Generation Pipeline - Phases 4 to 6]
-        ScenesArtifact --> Retrieval[Phase 4: B-roll Stock Retrieval & Deduplication]
-        Retrieval --> Normalization[Phase 5: FFmpeg Video Normalization & Assembly]
+    subgraph FootageEngine[Phase 4: Retrieval, Ranking & Dedup]
+        ScenesArtifact --> Search[Multi-Source Search: Pexels / Pixabay]
+        Search --> Failover[Provider Failover & Rate Limits]
+        Failover --> Ranker[Semantic Relevance Ranker & Homonym Guard]
+        Ranker --> Dedup[Clip Deduplicator & Near-Dup Prevention]
+        Dedup --> Fallback[FFmpeg Procedural Motion Fallback]
+        Dedup --> Download[Async Media Download & FFprobe Validation]
+        Fallback --> Download
+        Download --> TimelineArtifact[timeline.json & manifest.json Provenance]
+    end
+
+    subgraph VideoEngine[Video Generation Pipeline - Phases 5 to 6]
+        TimelineArtifact --> Normalization[Phase 5: FFmpeg Video Normalization & Assembly]
     end
 
     subgraph Delivery[Artifact Storage & Job State]
         Normalization --> S3[(MinIO / S3 Storage)]
         MasterAudio --> S3
-        ScenesArtifact --> S3
+        TimelineArtifact --> S3
     end
 ```
 
@@ -69,15 +88,15 @@ flowchart TD
 
 ## 3. Testing & Verification Modes
 
-### Mode A: Automated Offline Test Suite (52 Tests, 100% Offline, Zero API Keys)
+### Mode A: Automated Offline Test Suite (62 Tests, 100% Offline, Zero API Keys)
 
-Runs unit, integration, and failure-recovery tests deterministically using mock speech providers and in-memory persistence:
+Runs unit, integration, and failure-recovery tests deterministically using mock providers and in-memory persistence:
 
 ```bash
-# Run all 52 automated tests on host
+# Run all 62 automated tests on host
 pytest -v
 
-# OR run all 52 automated tests inside isolated Docker container
+# OR run all 62 automated tests inside isolated Docker container
 docker compose run --rm test
 ```
 
@@ -88,6 +107,15 @@ Benchmarks real neural TTS synthesis and CTranslate2 Whisper ASR across English,
 ```bash
 # Runs real edge-tts voices, Silero VAD, and faster-whisper INT8 transcription
 python scripts/verify_real_speech.py
+```
+
+### Mode C: Live Footage Retrieval Verification (Pexels, Pixabay, Procedural Fallback)
+
+Validates footage retrieval providers, FFprobe media integrity, and procedural fallback:
+
+```bash
+# Runs live provider tests if API keys are set, or validates procedural engine offline
+python scripts/verify_real_footage.py
 ```
 
 ---

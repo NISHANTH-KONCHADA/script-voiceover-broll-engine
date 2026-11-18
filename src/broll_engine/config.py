@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API Key")
     gemini_api_key: Optional[str] = Field(default=None, description="Google Gemini API Key")
 
+    # Footage Retrieval & Caching (Phase 4)
+    footage_cache_dir: str = Field(default="data/cache/footage", description="Local cache directory for B-roll footage")
+    min_relevance_threshold: float = Field(default=0.45, description="Minimum normalized relevance score (0.0 - 1.0)")
+    retrieval_provider_mode: str = Field(default="live", description="Provider mode: 'live' or 'mock'")
+
 
 # Global singleton instance
 settings = Settings()
