@@ -52,22 +52,27 @@ flowchart TD
 
 ---
 
-## 3. Quickstart Guide (Under 10 Commands)
+## 3. Testing & Verification Modes
 
-### Running Automated Tests (100% Offline, Zero API Keys Required)
+### Mode A: Automated Offline Test Suite (41 Tests, 100% Offline, Zero API Keys)
+
+Runs unit, integration, and failure-recovery tests deterministically using mock speech providers and in-memory persistence:
 
 ```bash
-# 1. Activate virtual environment
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# 2. Run all 39 unit and integration tests
+# Run all 41 automated tests on host
 pytest -v
 
-# 3. Export OpenAPI 3.1 schema
-python scripts/export_openapi.py
+# OR run all 41 automated tests inside isolated Docker container
+docker compose run --rm test
+```
 
-# 4. Launch development server
-python -m broll_engine.main
+### Mode B: Live Real-Model Speech Verification (faster-whisper + edge-tts)
+
+Benchmarks real neural TTS synthesis and CTranslate2 Whisper ASR across English, Hindi, and Tamil:
+
+```bash
+# Runs real edge-tts voices, Silero VAD, and faster-whisper INT8 transcription
+python scripts/verify_real_speech.py
 ```
 
 ---

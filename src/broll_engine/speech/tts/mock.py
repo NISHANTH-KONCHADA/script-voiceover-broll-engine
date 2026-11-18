@@ -1,7 +1,7 @@
 import os
 import tempfile
 import numpy as np
-import scipy.io.wavfile as wavfile
+import soundfile as sf
 from typing import List, Optional
 
 from broll_engine.speech.asr.base import WordTiming
@@ -81,7 +81,7 @@ class MockTTSProvider(TTSProvider):
             output_path = tmp.name
             tmp.close()
 
-        wavfile.write(output_path, self.sample_rate, audio_int16)
+        sf.write(output_path, audio_int16, self.sample_rate, subtype="PCM_16")
 
         with open(output_path, "rb") as f:
             audio_bytes = f.read()

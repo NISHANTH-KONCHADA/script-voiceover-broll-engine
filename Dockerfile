@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY pyproject.toml README.md ./
 
 # Copy source code before installing the package
 COPY src/ ./src/

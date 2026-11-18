@@ -25,6 +25,8 @@ class AudioMetadata:
     channels: int
     rms_dbfs: float
     speech_ratio: float
+    vad_provider: str = "silero"
+    silero_detected: bool = True
 
 
 class AudioPreflightError(APIError):
@@ -42,7 +44,9 @@ class AudioPreflightError(APIError):
 class AudioPreflightValidator:
     """
     Validates audio files for format, duration, integrity, and speech activity.
-    Fails fast on corrupted files, unsupported codecs, and silent/music-only tracks.
+    Integrates Silero VAD as the primary speech detector, retaining energy analysis
+    for complementary audio validation. Fails fast on corrupted files, unsupported codecs,
+    and silent/music-only tracks.
     """
 
     def __init__(
@@ -51,11 +55,13 @@ class AudioPreflightValidator:
         min_duration_seconds: float = settings.min_audio_duration_seconds,
         silence_threshold_dbfs: float = -45.0,
         min_speech_ratio: float = 0.05,
+        vad_provider: Optional[str] = None,
     ) -> None:
         self.max_duration = max_duration_seconds
         self.min_duration = min_duration_seconds
         self.silence_threshold_dbfs = silence_threshold_dbfs
         self.min_speech_ratio = min_speech_ratio
+        self.vad_provider = vad_provider or settings.vad_provider
 
     def validate_file(self, file_path: str) -> AudioMetadata:
         """Runs complete preflight inspection on an audio file path."""
@@ -80,7 +86,7 @@ class AudioPreflightValidator:
 
         # Step 3: Decode & integrity check
         try:
-            data, sample_rate = sf.read(str(path), always_2d=True)
+            data, sample_rate = sf.read(str(path), always_2d=True, dtype="float32")
         except Exception as exc:
             # Fallback check using pydub if soundfile lacks codec support for m4a
             try:
@@ -122,23 +128,25 @@ class AudioPreflightValidator:
             )
 
         # Step 5: Voice Activity Detection (VAD) & Energy Analysis
-        rms_dbfs, speech_ratio = self._analyze_speech_activity(data, sample_rate)
+        rms_dbfs, speech_ratio, silero_detected = self._analyze_speech_activity(data, sample_rate)
 
-        if rms_dbfs < self.silence_threshold_dbfs or speech_ratio < self.min_speech_ratio:
+        if rms_dbfs < self.silence_threshold_dbfs or speech_ratio < self.min_speech_ratio or not silero_detected:
             raise AudioPreflightError(
                 code="NO_SPEECH_DETECTED",
-                message="No speech detected in audio file. Audio appears to be completely silent or contains background music only.",
+                message="No human speech detected in audio file. Audio appears to be completely silent, corrupted, or contains background music only.",
                 details={
                     "duration_seconds": round(duration, 2),
                     "rms_dbfs": round(rms_dbfs, 2),
                     "speech_ratio": round(speech_ratio, 3),
+                    "silero_detected": silero_detected,
+                    "vad_provider": self.vad_provider,
                     "silence_threshold_dbfs": self.silence_threshold_dbfs,
                 },
             )
 
         logger.info(
             f"Audio preflight passed for {path.name}: {duration:.2f}s, {sample_rate}Hz, {channels}ch, "
-            f"RMS={rms_dbfs:.1f}dBFS, speech_ratio={speech_ratio:.2%}"
+            f"RMS={rms_dbfs:.1f}dBFS, speech_ratio={speech_ratio:.2%}, vad={self.vad_provider}"
         )
 
         return AudioMetadata(
@@ -149,38 +157,81 @@ class AudioPreflightValidator:
             channels=channels,
             rms_dbfs=round(rms_dbfs, 2),
             speech_ratio=round(speech_ratio, 3),
+            vad_provider=self.vad_provider,
+            silero_detected=silero_detected,
         )
 
-    def _analyze_speech_activity(self, data: np.ndarray, sample_rate: int) -> Tuple[float, float]:
+    def _analyze_speech_activity(self, data: np.ndarray, sample_rate: int) -> Tuple[float, float, bool]:
         """
-        Analyzes energy distribution and speech presence in 30ms frames.
-        Returns (overall_rms_dbfs, speech_frame_ratio).
+        Analyzes speech activity using Silero VAD (ONNX) as primary detector,
+        complemented by RMS dBFS energy distribution analysis.
+        Returns (overall_rms_dbfs, speech_ratio, speech_detected).
         """
-        # Convert to mono
+        # Convert to mono float32
         mono = data.mean(axis=1) if data.ndim > 1 else data
+        mono = mono.astype(np.float32)
 
-        # Overall RMS
+        # 1. Overall RMS dBFS energy check (complementary audio validation)
         mean_square = np.mean(mono ** 2)
         if mean_square <= 1e-12:
-            return -100.0, 0.0
+            return -100.0, 0.0, False
 
         rms = math.sqrt(mean_square)
         overall_dbfs = 20.0 * math.log10(max(rms, 1e-6))
 
-        # Chunk into 30ms windows
-        frame_size = int(sample_rate * 0.030)
-        if frame_size == 0 or len(mono) < frame_size:
-            return overall_dbfs, (1.0 if overall_dbfs > -35.0 else 0.0)
+        # Check if the audio is essentially digital silence (< -70 dBFS)
+        if overall_dbfs < -70.0:
+            return overall_dbfs, 0.0, False
 
-        num_chunks = len(mono) // frame_size
-        chunks = mono[:num_chunks * frame_size].reshape((num_chunks, frame_size))
+        speech_detected = False
+        speech_ratio = 0.0
 
-        chunk_rms = np.sqrt(np.mean(chunks ** 2, axis=1) + 1e-12)
-        chunk_dbfs = 20.0 * np.log10(np.maximum(chunk_rms, 1e-6))
+        # 2. Silero VAD as primary speech detector
+        if self.vad_provider == "silero":
+            try:
+                from faster_whisper.vad import get_speech_timestamps, VadOptions
 
-        # Speech frames typically sit between -35 dBFS and -12 dBFS
-        # Background noise sits below -45 dBFS
-        active_speech_frames = np.sum(chunk_dbfs > -38.0)
-        speech_ratio = float(active_speech_frames) / float(num_chunks)
+                # Resample mono audio to 16,000 Hz if necessary (Silero VAD standard)
+                if sample_rate != 16000:
+                    new_len = int(round(len(mono) * 16000.0 / sample_rate))
+                    resampled_mono = np.interp(
+                        np.linspace(0, len(mono), new_len, endpoint=False),
+                        np.arange(len(mono)),
+                        mono,
+                    ).astype(np.float32)
+                else:
+                    resampled_mono = mono
 
-        return overall_dbfs, speech_ratio
+                speech_timestamps = get_speech_timestamps(
+                    resampled_mono,
+                    sampling_rate=16000,
+                    vad_options=VadOptions(threshold=0.4, min_speech_duration_ms=100),
+                )
+
+                if speech_timestamps:
+                    total_speech_samples = sum(item["end"] - item["start"] for item in speech_timestamps)
+                    speech_ratio = float(total_speech_samples) / float(len(resampled_mono))
+                    speech_detected = speech_ratio >= self.min_speech_ratio
+                else:
+                    speech_detected = False
+                    speech_ratio = 0.0
+            except Exception as vad_err:
+                logger.warning(f"Silero VAD execution failed, falling back to energy analysis: {vad_err}")
+                speech_detected = False
+
+        # 3. Energy-based fallback analysis if vad_provider == 'energy' or Silero was bypassed
+        if self.vad_provider == "energy" or (not speech_detected and self.vad_provider != "silero"):
+            frame_size = int(sample_rate * 0.030)
+            if frame_size == 0 or len(mono) < frame_size:
+                speech_ratio = 1.0 if overall_dbfs > -35.0 else 0.0
+            else:
+                num_chunks = len(mono) // frame_size
+                chunks = mono[:num_chunks * frame_size].reshape((num_chunks, frame_size))
+                chunk_rms = np.sqrt(np.mean(chunks ** 2, axis=1) + 1e-12)
+                chunk_dbfs = 20.0 * np.log10(np.maximum(chunk_rms, 1e-6))
+                active_speech_frames = np.sum(chunk_dbfs > -38.0)
+                speech_ratio = float(active_speech_frames) / float(num_chunks)
+
+            speech_detected = speech_ratio >= self.min_speech_ratio
+
+        return overall_dbfs, speech_ratio, speech_detected

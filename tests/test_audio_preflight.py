@@ -2,7 +2,7 @@ import os
 import tempfile
 import numpy as np
 import pytest
-import scipy.io.wavfile as wavfile
+import soundfile as sf
 
 from broll_engine.speech.preflight import (
     AudioMetadata,
@@ -18,16 +18,19 @@ def temp_audio_dir():
 
 
 def create_synthetic_wav(path: str, duration_sec: float, sample_rate: int = 16000, silent: bool = False):
-    """Creates a synthetic WAV file with speech-like energy or pure silence."""
+    """Creates a synthetic WAV file with voiced speech-like formants or pure silence."""
     total_samples = int(duration_sec * sample_rate)
     if silent:
         data = np.zeros(total_samples, dtype=np.int16)
     else:
         t = np.linspace(0, duration_sec, total_samples, endpoint=False)
-        # Audible carrier tone simulating voiced speech
-        signal = 0.5 * np.sin(2 * np.pi * 300 * t)
-        data = (signal * 32767).astype(np.int16)
-    wavfile.write(path, sample_rate, data)
+        # Glottal excitation modulated by speech syllables and acoustic formants
+        glottal = ((t * 130) % 1.0 < 0.1).astype(np.float32)
+        syllables = np.maximum(0.0, np.sin(2 * np.pi * 3.5 * t))
+        formant = np.sin(2 * np.pi * 700 * t) + 0.5 * np.sin(2 * np.pi * 1220 * t)
+        sig = glottal * syllables * formant * 0.5
+        data = (sig * 32767).astype(np.int16)
+    sf.write(path, data, sample_rate, subtype="PCM_16")
 
 
 def test_valid_wav_passes_preflight(temp_audio_dir):
@@ -119,3 +122,34 @@ def test_silent_audio_rejected(temp_audio_dir):
         validator.validate_file(path)
 
     assert exc_info.value.code == "NO_SPEECH_DETECTED"
+
+
+def test_silero_vad_rejects_pure_sine_tone(temp_audio_dir):
+    """
+    Verifies that Silero VAD as neural acoustic detector rejects pure sine tones
+    as non-speech, even when loud, proving it is not just relying on simple RMS energy.
+    """
+    path = os.path.join(temp_audio_dir, "pure_tone.wav")
+    total_samples = 16000 * 3
+    t = np.linspace(0, 3.0, total_samples, endpoint=False)
+    pure_tone = (0.5 * np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16)
+    sf.write(path, pure_tone, 16000, subtype="PCM_16")
+
+    validator = AudioPreflightValidator(vad_provider="silero")
+    with pytest.raises(AudioPreflightError) as exc_info:
+        validator.validate_file(path)
+
+    assert exc_info.value.code == "NO_SPEECH_DETECTED"
+    assert exc_info.value.details.get("vad_provider") == "silero"
+
+
+def test_vad_energy_mode_fallback(temp_audio_dir):
+    """Verifies that energy-based VAD mode functions correctly as a fallback."""
+    path = os.path.join(temp_audio_dir, "speech_energy.wav")
+    create_synthetic_wav(path, duration_sec=3.0, silent=False)
+
+    validator = AudioPreflightValidator(vad_provider="energy")
+    meta = validator.validate_file(path)
+
+    assert meta.vad_provider == "energy"
+    assert meta.speech_ratio > 0.0

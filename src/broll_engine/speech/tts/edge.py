@@ -73,6 +73,7 @@ class EdgeTTSProvider(TTSProvider):
         communicate = edge_tts.Communicate(clean_text, resolved_voice)
 
         words: List[WordTiming] = []
+        sentence_boundaries: List[dict] = []
         audio_chunks: List[bytes] = []
 
         async for chunk in communicate.stream():
@@ -92,13 +93,63 @@ class EdgeTTSProvider(TTSProvider):
                             probability=1.0,
                         )
                     )
+            elif chunk["type"] == "SentenceBoundary":
+                offset_sec = chunk["offset"] / 10_000_000.0
+                duration_sec = chunk["duration"] / 10_000_000.0
+                sent_text = chunk["text"].strip()
+                if sent_text:
+                    sentence_boundaries.append({
+                        "offset": offset_sec,
+                        "duration": duration_sec,
+                        "text": sent_text,
+                    })
 
         full_audio_bytes = b"".join(audio_chunks)
         with open(output_path, "wb") as f:
             f.write(full_audio_bytes)
 
-        # Inspect duration and audio properties
+        # Inspect duration and audio properties via Silero VAD / preflight
         meta = self.preflight.validate_file(output_path)
+
+        # If WordBoundary was not emitted by edge-tts endpoint, interpolate from SentenceBoundary
+        if not words and sentence_boundaries:
+            for s in sentence_boundaries:
+                raw_words = s["text"].split()
+                if not raw_words:
+                    continue
+                total_chars = sum(max(1, len(w)) for w in raw_words)
+                sent_dur = max(0.05, s["duration"])
+                curr_t = s["offset"]
+                for w in raw_words:
+                    w_dur = (max(1, len(w)) / total_chars) * sent_dur
+                    words.append(
+                        WordTiming(
+                            word=w,
+                            start=round(curr_t, 3),
+                            end=round(curr_t + w_dur, 3),
+                            probability=1.0,
+                        )
+                    )
+                    curr_t += w_dur
+
+        # If still empty (e.g. no events sent), distribute across total audio duration
+        if not words:
+            raw_words = clean_text.split()
+            if raw_words:
+                total_chars = sum(max(1, len(w)) for w in raw_words)
+                total_dur = meta.duration_seconds
+                curr_t = 0.0
+                for w in raw_words:
+                    w_dur = (max(1, len(w)) / total_chars) * total_dur
+                    words.append(
+                        WordTiming(
+                            word=w,
+                            start=round(curr_t, 3),
+                            end=round(curr_t + w_dur, 3),
+                            probability=1.0,
+                        )
+                    )
+                    curr_t += w_dur
 
         # Extract language prefix from voice (e.g. 'en-IN-NeerjaNeural' -> 'en-IN')
         voice_lang = "-".join(resolved_voice.split("-")[:2])

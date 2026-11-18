@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     s3_region: str = Field(default="us-east-1", description="S3 region")
     s3_secure: bool = Field(default=False, description="Use SSL/TLS for S3 connections")
 
+    # Speech Processing: VAD (Voice Activity Detection)
+    vad_provider: str = Field(default="silero", description="VAD engine: 'silero' or 'energy'")
+
     # Speech Processing: ASR (faster-whisper)
     asr_provider: str = Field(default="mock", description="ASR engine: 'faster-whisper' or 'mock'")
     whisper_model_size: str = Field(default="small", description="Whisper model: tiny, base, small, medium")

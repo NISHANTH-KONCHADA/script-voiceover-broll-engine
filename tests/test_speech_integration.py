@@ -3,7 +3,7 @@ import os
 import tempfile
 import numpy as np
 import pytest
-import scipy.io.wavfile as wavfile
+import soundfile as sf
 from httpx import AsyncClient
 
 
@@ -17,10 +17,14 @@ def create_audio_fixture(duration_sec: float, silent: bool = False, sample_rate:
         data = np.zeros(total_samples, dtype=np.int16)
     else:
         t = np.linspace(0, duration_sec, total_samples, endpoint=False)
-        signal = 0.5 * np.sin(2 * np.pi * 320 * t)
+        word_pause = (t % 1.0) < 0.75
+        glottal = ((t * 130) % 1.0 < 0.12).astype(np.float32)
+        syllables = np.maximum(0.0, np.sin(2 * np.pi * 4.0 * t))
+        formant = np.sin(2 * np.pi * 650 * t) + 0.6 * np.sin(2 * np.pi * 1200 * t)
+        signal = glottal * syllables * formant * word_pause * 0.5
         data = (signal * 32767).astype(np.int16)
 
-    wavfile.write(path, sample_rate, data)
+    sf.write(path, data, sample_rate, subtype="PCM_16")
     return path
 
 

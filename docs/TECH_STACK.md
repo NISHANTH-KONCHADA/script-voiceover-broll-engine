@@ -79,21 +79,22 @@ flowchart TD
   - **Reasoning:** Satisfies Integration Standard Point 7 ("Files in, files out saved to S3-compatible storage"). MinIO runs directly inside `docker compose up`, allowing local offline testing, while the code transparently points to AWS S3 or Cloudflare R2 in production via standard AWS S3 SDK environment variables.
 
 ### 2.3 Speech Processing & Narration
+- **Voice Activity Detection (VAD):** **Silero VAD v6** (`silero_vad_v6.onnx` via `onnxruntime`).
+  - **Reasoning:** Primary acoustic neural speech detector. Operates on 16,000 Hz resampled float32 audio to reject pure tones (sine waves), hums, and non-speech soundscapes that simple energy detectors falsely flag as speech. Fails fast on silent or music-only audio (`NO_SPEECH_DETECTED`).
+  - **Complementary Energy Analysis:** Calculates 30ms window RMS dBFS energy distribution across frames to catch clipping, excessive headroom, or digital zero silence.
 - **Speech-to-Text (ASR):** **`faster-whisper`** (CTranslate2).
-  - **Model:** `whisper-small` or `whisper-medium` (multilingual).
-  - **Reasoning:** Produces accurate word-level alignment timestamps, runs 4x faster than vanilla OpenAI Whisper, requires $<1\text{ GB}$ RAM on CPU, and supports English, Hindi, and Tamil speech out of the box (Outstanding Criterion 2).
-- **Voice Activity Detection (VAD):** **Silero VAD** / `pydub`.
-  - **Reasoning:** Detects silent audio or background music-only tracks in $<50\text{ ms}$, failing fast on invalid inputs (Hard Case 6).
+  - **Model:** `whisper-tiny` / `whisper-small` / `whisper-medium` (multilingual).
+  - **Reasoning:** Produces accurate word-level alignment timestamps, runs 4x faster than vanilla OpenAI Whisper, requires $<1\text{ GB}$ RAM on CPU with INT8 quantization, and supports English, Hindi, and Tamil speech out of the box (Outstanding Criterion 2). Uses pinned `av<19.0.0` for C-API stability.
 - **Text-to-Speech (TTS):** **`edge-tts`** (Microsoft Azure Speech neural backend).
   - **Reasoning:**
-    - Zero cost, zero API keys required for high-fidelity production voices.
+    - Zero cost, zero API keys required for high-fidelity production voices during evaluation and development.
     - Multilingual voice support:
       - Indian English: `en-IN-NeerjaNeural` (female), `en-IN-PrabhatNeural` (male).
       - Hindi: `hi-IN-SwaraNeural` (female), `hi-IN-MadhurNeural` (male).
       - Tamil: `ta-IN-PallaviNeural` (female), `ta-IN-ValluvarNeural` (male).
       - US English: `en-US-JennyNeural`, `en-US-GuyNeural`.
-    - Returns word boundary events for frame-accurate caption synchronization.
-  - **Swappable Interface:** Wrapped behind `TTSProvider` base class, allowing seamless switching to ElevenLabs, Kokoro, or Amazon Polly.
+    - Captures `SentenceBoundary` events and interpolates accurate word-level timings based on character/syllable distribution across sentence audio spans, guaranteeing populated word timestamps for downstream scene synchronization.
+  - **Swappable Interface & Commercial Terms:** Wrapped behind `TTSProvider` abstract base class (`src/broll_engine/speech/tts/base.py`). Microsoft's consumer endpoints require continuous Internet connectivity and are intended for testing/assessment; for commercial enterprise scaling, the system easily drops in Azure Cognitive Services Speech API, ElevenLabs, or self-hosted open-source models (Piper, Kokoro) with zero code refactoring.
 
 ### 2.4 Semantic NLP & Query Generation
 - **Sentence Segmentation:** **`spaCy`** (models `en_core_web_sm` and `xx_sent_ud_sm`) with rule-based conjunction splitters.
