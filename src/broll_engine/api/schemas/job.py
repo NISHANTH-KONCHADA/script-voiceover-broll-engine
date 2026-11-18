@@ -38,6 +38,7 @@ class JobCreateRequest(BaseModel):
     avoid: Optional[List[str]] = Field(default_factory=list, description="Negative visual concepts or content to avoid")
     captions: CaptionOptions = Field(default_factory=CaptionOptions, description="Caption generation preferences")
     callback_url: Optional[str] = Field(default=None, description="Optional webhook URL called upon job completion")
+    webhook_secret: Optional[str] = Field(default=None, description="Optional custom shared secret for HMAC-SHA256 callback signing")
 
     @model_validator(mode="after")
     def validate_inputs(self) -> "JobCreateRequest":
@@ -65,6 +66,7 @@ class JobOutputs(BaseModel):
     captions: Optional[str] = Field(default=None, description="Download URL for captions.srt")
     timeline: Optional[str] = Field(default=None, description="Download URL for timeline.json")
     manifest: Optional[str] = Field(default=None, description="Download URL for manifest.json")
+    quality_report: Optional[str] = Field(default=None, description="Download URL for quality_report.json (Phase 6)")
 
 
 class JobDetailResponse(BaseModel):

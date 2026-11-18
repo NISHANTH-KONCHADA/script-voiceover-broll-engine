@@ -1,7 +1,7 @@
 # IncuBrix Script, Voiceover & B-roll Video Engine (PS3)
 
 > **IncuBrix 2027 Software Engineer Assessment — Problem Statement 3 (PS3)**  
-> **Status:** Phase 5 Complete (Audio Normalization, Subtitles & Multi-Aspect Video Assembly)  
+> **Status:** Phase 6 Complete (Quality Assessment, Saliency & Webhook Delivery)  
 > **API Version:** 0.1.0 (OpenAPI 3.1)  
 
 ---
@@ -41,6 +41,16 @@ The **Script, Voiceover & B-roll Video Engine** is a containerized microservice 
   - FFmpeg concat demuxer assembly with zero black frames and zero frozen frames.
   - Frame-accurate audio-video synchronization ($\le 33\text{ ms}$ drift guarantee, zero audio drift).
   - Automated output verification via FFprobe (codec, dimensions, framerate, stream presence).
+- **Phase 6 (Completed):** Quality Assessment, Saliency & Webhook Delivery:
+  - Automated video quality inspection using FFmpeg `blackdetect` and `freezedetect` filters.
+  - Broadcast stream validation (H.264, AAC, yuv420p, 30.0 fps, exact aspect ratio resolution).
+  - Audio/video duration drift validation with $\le 50\text{ ms}$ broadcast synchronization tolerance.
+  - Subtitle cue timing validation (sequential ordering, overlap avoidance, video duration boundaries).
+  - Spatial composition and crop safety analysis across 16:9, 9:16, and 1:1 via rule-of-thirds spatial energy distribution (explicitly disclosed as `heuristic_spatial_contrast`).
+  - Scene-level quality scoring with explainable per-scene composite metrics (relevance, pacing, diversity).
+  - Overall composite quality score (0–100) with pass/fail evaluation, warnings, and failures.
+  - Outbound HMAC-SHA256 signed webhook delivery (`X-IncuBrix-Signature`) with exponential backoff retries and non-fatal failure isolation.
+  - Generation of structured `quality_report.json` and integrated `quality_assessment` inside `manifest.json`.
 
 ---
 
@@ -92,10 +102,15 @@ flowchart TD
         Muxer --> Probe[FFprobe Media Validator]
     end
 
-    subgraph Delivery[Artifact Storage & Job State]
-        Probe --> S3[(MinIO / S3 Storage)]
+    subgraph QualityAndDelivery[Phase 6: Quality Assessment, Saliency & Webhook Delivery]
+        Probe --> QualityEval[Video Quality Evaluator\nBlack & Frozen Frame Detectors]
+        QualityEval --> SaliencyEval[Visual Saliency & Rule-of-Thirds Crop]
+        SaliencyEval --> Scorer[Quality Scorer: 0-100 & Pass/Fail]
+        Scorer --> QualityArtifact[quality_report.json & manifest.json]
+        QualityArtifact --> S3[(MinIO / S3 Storage)]
         AudioNorm --> S3
         Subtitles --> S3
+        Scorer --> Webhook[HMAC-SHA256 Webhook Dispatcher\nX-IncuBrix-Signature & Backoff Retries]
     end
 ```
 
@@ -103,15 +118,15 @@ flowchart TD
 
 ## 3. Testing & Verification Modes
 
-### Mode A: Automated Offline Test Suite (68 Tests, 100% Offline, Zero API Keys)
+### Mode A: Automated Offline Test Suite (81 Tests, 100% Offline, Zero API Keys)
 
-Runs unit, integration, and failure-recovery tests deterministically using mock providers and in-memory persistence:
+Runs unit, integration, quality inspection, and failure-recovery tests deterministically using mock providers and in-memory persistence:
 
 ```bash
-# Run all 68 automated tests on host
+# Run all 81 automated tests on host
 pytest -v
 
-# OR run all 68 automated tests inside isolated Docker container
+# OR run all 81 automated tests inside isolated Docker container
 docker compose run --rm test
 ```
 

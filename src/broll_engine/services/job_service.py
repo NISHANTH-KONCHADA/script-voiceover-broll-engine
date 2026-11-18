@@ -35,6 +35,7 @@ class JobService:
                 captions=record.outputs.get("captions"),
                 timeline=record.outputs.get("timeline"),
                 manifest=record.outputs.get("manifest"),
+                quality_report=record.outputs.get("quality_report"),
             )
 
         return JobDetailResponse(

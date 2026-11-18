@@ -16,6 +16,7 @@ from broll_engine.models.scenes import TimingSource
 from broll_engine.repositories.base import JobRepository
 from broll_engine.retrieval.engine import FootageRetrievalEngine
 from broll_engine.scenes.segmenter import SemanticSceneSegmenter
+from broll_engine.quality.evaluator import VideoQualityEvaluator
 from broll_engine.services.webhook import dispatch_webhook
 from broll_engine.speech.asr.base import ASRProvider, TranscriptionResult, WordTiming
 from broll_engine.speech.factory import create_asr_provider, create_tts_provider
@@ -41,6 +42,7 @@ class JobExecutionWorker:
         segmenter: Optional[SemanticSceneSegmenter] = None,
         retrieval_engine: Optional[FootageRetrievalEngine] = None,
         assembly_engine: Optional[VideoAssemblyEngine] = None,
+        quality_evaluator: Optional[VideoQualityEvaluator] = None,
         step_delay_seconds: float = 0.05,
     ) -> None:
         self.repository = repository
@@ -50,6 +52,7 @@ class JobExecutionWorker:
         self.segmenter = segmenter or SemanticSceneSegmenter()
         self.retrieval_engine = retrieval_engine or FootageRetrievalEngine()
         self.assembly_engine = assembly_engine or VideoAssemblyEngine()
+        self.quality_evaluator = quality_evaluator or VideoQualityEvaluator()
         self.preflight = AudioPreflightValidator()
         self.step_delay = step_delay_seconds
 
@@ -333,14 +336,34 @@ class JobExecutionWorker:
 
             # Upload captions sidecar
             srt_path = assembly_result.get("captions_srt_path") if assembly_result else None
+            captions_str = ""
             if srt_path and os.path.exists(srt_path):
                 captions_url = await self.storage.upload_file(srt_path, f"jobs/{job_id}/captions.srt", "text/plain")
+                try:
+                    captions_str = Path(srt_path).read_text(encoding="utf-8")
+                except Exception:
+                    pass
             else:
                 captions_str = self.assembly_engine.subtitle_generator.generate_srt_from_scenes(segmentation_result.scenes)
                 captions_url = await self.storage.upload_bytes(
                     captions_str.encode("utf-8"), f"jobs/{job_id}/captions.srt", "text/plain"
                 )
             outputs["captions"] = captions_url
+
+            # Step 7: Video Quality Assessment, Saliency & Scoring (Phase 6)
+            rendered_video_paths = assembly_result.get("videos", {}) if assembly_result else {}
+            quality_report_obj = await self.quality_evaluator.evaluate_video_quality(
+                video_paths=rendered_video_paths,
+                scenes=segmentation_result.scenes,
+                clips=retrieval_result.clips,
+                srt_content=captions_str,
+                primary_aspect_ratio="16:9",
+            )
+            quality_report_bytes = json.dumps(quality_report_obj.model_dump(), indent=2).encode("utf-8")
+            quality_report_url = await self.storage.upload_bytes(
+                quality_report_bytes, f"jobs/{job_id}/quality_report.json", "application/json"
+            )
+            outputs["quality_report"] = quality_report_url
 
             # Cleanup render working directory
             shutil.rmtree(render_output_dir, ignore_errors=True)
@@ -456,7 +479,15 @@ class JobExecutionWorker:
                     "ai_generated_clips_count": sum(1 for c in retrieval_result.clips if c.is_ai_generated),
                     "procedural_clips_count": sum(1 for c in retrieval_result.clips if c.is_procedural),
                 },
-                "warnings": [],
+                "quality_assessment": {
+                    "overall_quality_score": quality_report_obj.overall_quality_score,
+                    "passed": quality_report_obj.passed,
+                    "warnings": quality_report_obj.warnings,
+                    "failures": quality_report_obj.failures,
+                    "objective_metrics": quality_report_obj.objective_metrics,
+                    "heuristic_metrics": quality_report_obj.heuristic_metrics,
+                },
+                "warnings": quality_report_obj.warnings,
             }, indent=2).encode("utf-8")
             manifest_url = await self.storage.upload_bytes(
                 manifest_data, f"jobs/{job_id}/manifest.json", "application/json"
@@ -483,7 +514,8 @@ class JobExecutionWorker:
                     "outputs": record.outputs,
                     "completed_at": record.completed_at.isoformat() if record.completed_at else None,
                 }
-                await dispatch_webhook(callback_url, payload)
+                webhook_secret = request_payload.get("webhook_secret")
+                await dispatch_webhook(callback_url, payload, secret=webhook_secret)
 
         except AudioPreflightError as exc:
             logger.warning(f"Audio preflight failed for job {job_id}: {exc.code} - {exc.message}")
@@ -500,6 +532,17 @@ class JobExecutionWorker:
                 stage="FAILED",
                 error=error_payload,
             )
+            callback_url = request_payload.get("callback_url")
+            if callback_url:
+                payload = {
+                    "job_id": job_id,
+                    "status": JobStatus.FAILED.value,
+                    "progress": 100,
+                    "error": error_payload,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                webhook_secret = request_payload.get("webhook_secret")
+                await dispatch_webhook(callback_url, payload, secret=webhook_secret)
         except Exception as exc:
             logger.exception(f"Job {job_id} encountered unexpected failure: {exc}")
             error_payload = {
@@ -515,6 +558,17 @@ class JobExecutionWorker:
                 stage="FAILED",
                 error=error_payload,
             )
+            callback_url = request_payload.get("callback_url")
+            if callback_url:
+                payload = {
+                    "job_id": job_id,
+                    "status": JobStatus.FAILED.value,
+                    "progress": 100,
+                    "error": error_payload,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                webhook_secret = request_payload.get("webhook_secret")
+                await dispatch_webhook(callback_url, payload, secret=webhook_secret)
         finally:
             for tf in temp_files_to_cleanup:
                 if os.path.exists(tf):
