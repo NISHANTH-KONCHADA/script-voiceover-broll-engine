@@ -337,6 +337,12 @@ components:
           - type: 'null'
           title: Transcript
           description: Download URL for word-aligned transcript.json
+        scenes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Scenes
+          description: Download URL for scenes.json (Phase 3)
         captions:
           anyOf:
           - type: string

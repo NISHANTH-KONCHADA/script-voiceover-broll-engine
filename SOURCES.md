@@ -35,7 +35,19 @@ Every model, API, library, dataset, and media source used in this project is dis
 
 ---
 
-## 3. Testing Modes & Verification Isolation
+## 3. Scene Segmentation & Visual Intelligence Stack (Phase 3)
+
+| Component | Module / Method | License | Commercial Use Status | Notes & Verification |
+| :--- | :--- | :--- | :--- | :--- |
+| **Semantic Scene Segmenter** | `SemanticSceneSegmenter` | Proprietary / In-House | **Fully Permitted** | Groups narration into coherent visual scenes respecting sentence and grammatical clause boundaries. Supports director hints (`JobCreateRequest.scenes`) and auto-segmentation in English, Hindi, and Tamil. |
+| **Pacing Guard** | `PacingGuard` | Proprietary / In-House | **Fully Permitted** | Enforces minimum duration (1.8s) and maximum duration (5.0s). Splits long scenes at clause boundaries, punctuation, or speech pauses (>0.3s). Intelligently merges trailing or sub-1.8s scenes. Enforces mathematical timeline continuity ($start_i == end_{i-1}$) with zero black frames, gaps, or overlaps. |
+| **Contextual Query Disambiguator** | `ContextualQueryDisambiguator` | Proprietary / In-House | **Fully Permitted** | Deterministic domain taxonomy and rule-based semantic disambiguation for homonyms (cloud computing vs atmospheric sky, python code vs snake, apple technology vs fruit) and abstract concept metaphors (trust, growth, innovation, security). Extensible for future LLM / vector embedding backends. |
+| **Safety & Negative Filters** | `SafetyPromptFilter` | Proprietary / In-House | **Fully Permitted** | Automatically injects safety negative constraints preventing identifiable human faces, celebrity faces, politicians, copyrighted logos, stock footage watermarks, and user-specified `avoid` terms. |
+| **Timing Provenance Tracker** | `TimingSource` (`asr_acoustic` vs `tts_interpolated`) | Proprietary / In-House | **Fully Permitted** | Strictly tracks whether word timings derive from acoustic speech recognition (`faster-whisper`) or character-weighted sentence interpolation (`edge-tts`), ensuring honest timeline metadata. |
+
+---
+
+## 4. Testing Modes & Verification Isolation
 
 To uphold honest and transparent performance metrics, the project strictly distinguishes between unit/CI test execution and live model inference:
 
@@ -55,9 +67,7 @@ To uphold honest and transparent performance metrics, the project strictly disti
 
 ---
 
----
-
-## 3. Infrastructure & Storage Components
+## 5. Infrastructure & Storage Components
 
 | Component | Image / Package | License | Compliance Strategy |
 | :--- | :--- | :--- | :--- |
@@ -66,7 +76,7 @@ To uphold honest and transparent performance metrics, the project strictly disti
 
 ---
 
-## 4. Reference Frameworks
+## 6. Reference Frameworks
 
 | Project | Author | License | Usage in Project |
 | :--- | :--- | :--- | :--- |

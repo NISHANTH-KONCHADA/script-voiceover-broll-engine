@@ -31,6 +31,7 @@ class JobService:
                 videos=record.outputs.get("videos", {}),
                 audio=record.outputs.get("audio"),
                 transcript=record.outputs.get("transcript"),
+                scenes=record.outputs.get("scenes"),
                 captions=record.outputs.get("captions"),
                 timeline=record.outputs.get("timeline"),
                 manifest=record.outputs.get("manifest"),

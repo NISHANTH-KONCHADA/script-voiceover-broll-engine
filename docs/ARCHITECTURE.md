@@ -132,10 +132,19 @@ The engine accepts two entry modes:
   - Prevents rapid 0.5-second cuts that cause viewer fatigue.
   - Imposes a strict **minimum scene duration of 1.8 seconds** and **maximum duration of 5.0 seconds**.
   - Short prepositional phrases are merged with adjacent clauses. Excessively long sentences are broken at coordinate conjunctions or natural conversational breathing pauses.
-- Every millisecond of the narration timeline is assigned to exactly one scene:
+### 3.2 Semantic Scene Segmentation & Pacing Guard (Phase 3 Implemented)
+- **Engine Modules:**
+  - `SemanticSceneSegmenter` (`src/broll_engine/scenes/segmenter.py`): Performs sentence and grammatical clause boundary segmentation aligned with speech timestamps.
+  - `PacingGuard` (`src/broll_engine/scenes/pacing.py`): Enforces minimum scene duration ($1.8\text{ s}$) and maximum scene duration ($5.0\text{ s}$).
+  - `ContextualQueryDisambiguator` (`src/broll_engine/scenes/disambiguation.py`): Resolves homonyms, maps abstract concepts to visual metaphors, and enforces negative constraints.
+- **Timing Source Differentiation:**
+  - `asr_acoustic`: Acoustically aligned word timestamps produced via faster-whisper CTC/cross-attention alignments.
+  - `tts_interpolated`: Estimated word boundaries interpolated from Edge-TTS sentence audio spans.
+- **Continuous Timeline Invariant:**
+  - Every millisecond of the narration timeline is assigned to exactly one scene with zero gaps and zero overlaps:
   $$\bigcup_{i=1}^N [T_{\text{start}, i}, T_{\text{end}, i}] = [0.0, T_{\text{total}}], \quad T_{\text{start}, i+1} = T_{\text{end}, i}$$
 
-### 3.3 Contextual Query Generation & Disambiguation
+### 3.3 Contextual Query Generation & Disambiguation (Phase 3 Implemented)
 Naive keyword matching fails on abstract lines, numbers, and homonyms. The system runs a prompt-engineered query generator:
 1. **Disambiguation Matrix:**
    - Evaluates the scene text within the context of the entire narration paragraph.

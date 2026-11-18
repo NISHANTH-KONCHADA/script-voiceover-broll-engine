@@ -1,7 +1,7 @@
 # IncuBrix Script, Voiceover & B-roll Video Engine (PS3)
 
 > **IncuBrix 2027 Software Engineer Assessment — Problem Statement 3 (PS3)**  
-> **Status:** Phase 2 Complete (Speech Processing & Narration Engine)  
+> **Status:** Phase 3 Complete (Semantic Scene Segmentation & Contextual Visual Intelligence)  
 > **API Version:** 0.1.0 (OpenAPI 3.1)  
 
 ---
@@ -13,10 +13,17 @@ The **Script, Voiceover & B-roll Video Engine** is a containerized microservice 
 - **Phase 1 (Completed):** Enterprise foundation, FastAPI with OpenAPI 3.1, background jobs (HTTP 202), `Idempotency-Key` handling, SQLite persistence with WAL mode, MinIO S3 storage, structured JSON logging, and health probes.
 - **Phase 2 (Completed):** Speech Processing & Narration Engine:
   - Audio preflight validation for MP3, WAV, M4A with 10-minute duration enforcement.
-  - Energy-based Voice Activity Detection (VAD) and silence rejection (`NO_SPEECH_DETECTED`).
+  - Silero VAD v6 neural speech activity detection and silence rejection (`NO_SPEECH_DETECTED`).
   - Modular Speech-to-Text (ASR) via `faster-whisper` with frame-accurate word-level timestamps.
   - Multilingual support for English, Hindi (`hi-IN`), and Tamil (`ta-IN`).
   - Modular Text-to-Speech (TTS) via `edge-tts` supporting Indian English, US English, Hindi, and Tamil voices with word boundary timings.
+- **Phase 3 (Completed):** Semantic Scene Segmentation & Contextual Visual Intelligence:
+  - Natural linguistic scene segmentation respecting sentence and clause boundaries in English, Hindi, and Tamil.
+  - Pacing Guard strictly enforcing $1.8\text{ s} \le \text{scene duration} \le 5.0\text{ s}$, with intelligent sub-clause splitting, pause splitting, trailing-scene merging, and mathematically guaranteed gapless/overlap-free coverage ($start_i = end_{i-1}$).
+  - Contextual query disambiguation resolving homonyms (e.g. cloud computing vs sky, python code vs animal, apple tech vs fruit) and grounding abstract concepts ("trust", "growth", "innovation", "security") into concrete visual search queries.
+  - Safety constraints avoiding real identifiable human faces, celebrity faces, copyrighted logos, and watermarks, combined with custom user negative prompts (`avoid` list).
+  - Explicit timing provenance tracking: distinct `asr_acoustic` vs `tts_interpolated` metadata.
+  - Full output artifact generation: `scenes.json` and enriched `timeline.json` uploaded to S3/MinIO.
 
 ---
 
@@ -25,28 +32,36 @@ The **Script, Voiceover & B-roll Video Engine** is a containerized microservice 
 ```mermaid
 flowchart TD
     subgraph Ingestion[Audio or Script Ingestion]
-        AudioIn[Raw Audio: mp3, wav, m4a] --> Preflight[Audio Preflight & VAD]
+        AudioIn[Raw Audio: mp3, wav, m4a] --> Preflight[Audio Preflight & Silero VAD]
         ScriptIn[Script / IncuBrix Scenes] --> TTS[Neural TTS Engine\nen-IN, hi-IN, ta-IN, en-US]
     end
 
     subgraph SpeechProcessing[Speech Processing & Alignment]
         Preflight --> ASR[faster-whisper ASR]
-        ASR --> WordTimings[Word-Level Timestamps]
-        TTS --> WordTimings
+        ASR --> WordTimings[Acoustic Word Timestamps]
+        TTS --> WordTimingsTTS[Interpolated Word Timings]
         TTS --> MasterAudio[Master Audio Stream]
         Preflight --> MasterAudio
     end
 
-    subgraph VideoEngine[Video Generation Pipeline - Phases 3 to 6]
-        WordTimings --> Seg[Semantic Scene Segmentation]
-        Seg --> Retrieval[B-roll Stock Retrieval]
-        Retrieval --> Normalization[FFmpeg Video Normalization & Assembly]
+    subgraph SceneIntelligence[Phase 3: Visual Intelligence & Segmentation]
+        WordTimings --> Seg[Semantic Scene Segmenter]
+        WordTimingsTTS --> Seg
+        Seg --> Pacing[Pacing Guard: 1.8s - 5.0s\nZero Gaps & Overlaps]
+        Pacing --> Disambig[Contextual Query Disambiguator\nHomonyms & Abstract Metaphors]
+        Disambig --> Safety[Safety & Negative Constraints]
+        Safety --> ScenesArtifact[scenes.json & timeline.json]
+    end
+
+    subgraph VideoEngine[Video Generation Pipeline - Phases 4 to 6]
+        ScenesArtifact --> Retrieval[Phase 4: B-roll Stock Retrieval & Deduplication]
+        Retrieval --> Normalization[Phase 5: FFmpeg Video Normalization & Assembly]
     end
 
     subgraph Delivery[Artifact Storage & Job State]
         Normalization --> S3[(MinIO / S3 Storage)]
         MasterAudio --> S3
-        WordTimings --> S3
+        ScenesArtifact --> S3
     end
 ```
 
@@ -54,15 +69,15 @@ flowchart TD
 
 ## 3. Testing & Verification Modes
 
-### Mode A: Automated Offline Test Suite (41 Tests, 100% Offline, Zero API Keys)
+### Mode A: Automated Offline Test Suite (52 Tests, 100% Offline, Zero API Keys)
 
 Runs unit, integration, and failure-recovery tests deterministically using mock speech providers and in-memory persistence:
 
 ```bash
-# Run all 41 automated tests on host
+# Run all 52 automated tests on host
 pytest -v
 
-# OR run all 41 automated tests inside isolated Docker container
+# OR run all 52 automated tests inside isolated Docker container
 docker compose run --rm test
 ```
 

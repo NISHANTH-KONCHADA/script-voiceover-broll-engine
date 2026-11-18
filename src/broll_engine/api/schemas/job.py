@@ -61,6 +61,7 @@ class JobOutputs(BaseModel):
     videos: Dict[str, str] = Field(default_factory=dict, description="Map of aspect_ratio to video download URL")
     audio: Optional[str] = Field(default=None, description="Download URL for master narration audio")
     transcript: Optional[str] = Field(default=None, description="Download URL for word-aligned transcript.json")
+    scenes: Optional[str] = Field(default=None, description="Download URL for scenes.json (Phase 3)")
     captions: Optional[str] = Field(default=None, description="Download URL for captions.srt")
     timeline: Optional[str] = Field(default=None, description="Download URL for timeline.json")
     manifest: Optional[str] = Field(default=None, description="Download URL for manifest.json")

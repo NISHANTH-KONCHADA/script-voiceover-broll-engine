@@ -22,6 +22,7 @@ services:
       WEBHOOK_SECRET: "test-webhook-hmac-secret-key-32chars"
     volumes:
       - app_data:/app/data
+      - ./src:/app/src
       - ./tmp:/app/tmp
       - ./outputs:/app/outputs
     depends_on:
@@ -73,6 +74,9 @@ services:
       APP_ENV: "test"
       DATABASE_URL: "sqlite+aiosqlite:///:memory:"
     entrypoint: [ "pytest", "-v", "tests/" ]
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
     profiles:
       - test
 

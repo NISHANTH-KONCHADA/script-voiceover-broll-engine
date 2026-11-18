@@ -8,11 +8,13 @@ from typing import Any, Dict, Optional
 import httpx
 
 from broll_engine.api.routes.errors import APIError
-from broll_engine.api.schemas.job import JobStatus
+from broll_engine.api.schemas.job import JobStatus, SceneHint
 from broll_engine.logging import get_logger, job_id_ctx
+from broll_engine.models.scenes import TimingSource
 from broll_engine.repositories.base import JobRepository
+from broll_engine.scenes.segmenter import SemanticSceneSegmenter
 from broll_engine.services.webhook import dispatch_webhook
-from broll_engine.speech.asr.base import ASRProvider, TranscriptionResult
+from broll_engine.speech.asr.base import ASRProvider, TranscriptionResult, WordTiming
 from broll_engine.speech.factory import create_asr_provider, create_tts_provider
 from broll_engine.speech.preflight import AudioPreflightError, AudioPreflightValidator
 from broll_engine.speech.tts.base import TTSProvider, TTSResult
@@ -24,7 +26,7 @@ logger = get_logger(__name__)
 class JobExecutionWorker:
     """
     Orchestrates the asynchronous video creation pipeline:
-    Speech Processing (ASR/TTS) -> Segmentation -> Retrieval -> Assembly -> Manifest.
+    Speech Processing (ASR/TTS) -> Semantic Segmentation -> Retrieval -> Assembly -> Manifest.
     """
 
     def __init__(
@@ -33,12 +35,14 @@ class JobExecutionWorker:
         storage: StorageAdapter,
         asr_provider: Optional[ASRProvider] = None,
         tts_provider: Optional[TTSProvider] = None,
+        segmenter: Optional[SemanticSceneSegmenter] = None,
         step_delay_seconds: float = 0.05,
     ) -> None:
         self.repository = repository
         self.storage = storage
         self.asr_provider = asr_provider or create_asr_provider()
         self.tts_provider = tts_provider or create_tts_provider()
+        self.segmenter = segmenter or SemanticSceneSegmenter()
         self.preflight = AudioPreflightValidator()
         self.step_delay = step_delay_seconds
 
@@ -164,7 +168,7 @@ class JobExecutionWorker:
                 words_data = [w.to_dict() for w in tts_result.words]
                 master_audio_bytes = tts_result.audio_bytes
 
-            # Step 3: Segmentation (Phase 3 preview / placeholder)
+            # Step 3: Semantic Scene Segmentation & Contextual Query Disambiguation (Phase 3)
             if self.step_delay > 0:
                 await asyncio.sleep(self.step_delay)
             await self.repository.update_job_status(
@@ -174,13 +178,56 @@ class JobExecutionWorker:
                 stage="SCENE_SEGMENTATION",
             )
 
-            # Step 4: Footage Retrieval (Phase 4 preview / placeholder)
+            # Distinguish genuine acoustic ASR alignment from interpolated TTS sentence timings
+            timing_source = (
+                TimingSource.ASR_ACOUSTIC if audio_url else TimingSource.TTS_INTERPOLATED
+            )
+
+            raw_scenes_hint = request_payload.get("scenes")
+            scenes_hint = None
+            if raw_scenes_hint:
+                scenes_hint = [
+                    SceneHint(**s) if isinstance(s, dict) else s
+                    for s in raw_scenes_hint
+                ]
+
+            word_timing_objs = [
+                WordTiming(
+                    word=w["word"],
+                    start=w["start"],
+                    end=w["end"],
+                    probability=w.get("probability", 1.0),
+                )
+                for w in words_data
+            ]
+
+            segmentation_result = self.segmenter.segment(
+                transcript_text=narration_text,
+                words=word_timing_objs,
+                total_duration_seconds=audio_duration,
+                language=detected_language,
+                timing_source=timing_source,
+                scenes_hint=scenes_hint,
+                style_hint=request_payload.get("style"),
+                user_avoid_list=request_payload.get("avoid"),
+            )
+
             if self.step_delay > 0:
                 await asyncio.sleep(self.step_delay)
             await self.repository.update_job_status(
                 job_id=job_id,
                 status=JobStatus.RUNNING,
-                progress=75,
+                progress=70,
+                stage="QUERY_DISAMBIGUATION",
+            )
+
+            # Step 4: Footage Retrieval & Dedup (Phase 4 preview / placeholder)
+            if self.step_delay > 0:
+                await asyncio.sleep(self.step_delay)
+            await self.repository.update_job_status(
+                job_id=job_id,
+                status=JobStatus.RUNNING,
+                progress=80,
                 stage="FOOTAGE_RETRIEVAL_AND_DEDUP",
             )
 
@@ -217,11 +264,21 @@ class JobExecutionWorker:
             )
             outputs["transcript"] = transcript_url
 
+            # Upload scenes.json (Phase 3)
+            scenes_data = json.dumps(
+                segmentation_result.model_dump(),
+                indent=2,
+            ).encode("utf-8")
+            scenes_url = await self.storage.upload_bytes(
+                scenes_data, f"jobs/{job_id}/scenes.json", "application/json"
+            )
+            outputs["scenes"] = scenes_url
+
             # Upload videos for requested aspect ratios
             for ratio in aspect_ratios:
                 ratio_str = ratio if isinstance(ratio, str) else ratio.value
                 safe_ratio = ratio_str.replace(":", "x")
-                mock_video_bytes = b"MP4_PHASE2_VIDEO_CONTAINER_DATA"
+                mock_video_bytes = b"MP4_PHASE3_VIDEO_CONTAINER_DATA"
                 key = f"jobs/{job_id}/video_{safe_ratio}.mp4"
                 url = await self.storage.upload_bytes(mock_video_bytes, key, "video/mp4")
                 outputs["videos"][ratio_str] = url
@@ -236,27 +293,36 @@ class JobExecutionWorker:
             )
             outputs["captions"] = captions_url
 
-            # Upload timeline.json
-            timeline_data = json.dumps([
-                {
-                    "scene_index": 0,
-                    "text": narration_text[:120],
-                    "start_time": 0.0,
-                    "end_time": round(audio_duration, 3),
-                    "duration": round(audio_duration, 3),
+            # Upload timeline.json with all segmented scenes
+            timeline_items = []
+            for sc in segmentation_result.scenes:
+                timeline_items.append({
+                    "scene_id": sc.id,
+                    "scene_index": sc.index,
+                    "start_time": sc.start_seconds,
+                    "end_time": sc.end_seconds,
+                    "duration": sc.duration_seconds,
+                    "narration_text": sc.narration_text,
+                    "visual_query": sc.visual_query,
+                    "visual_intent": sc.visual_intent,
+                    "negative_constraints": sc.negative_constraints,
+                    "segmentation_reason": sc.segmentation_reason.value,
+                    "pacing_status": sc.pacing_status.value,
+                    "timing_source": sc.timing_source.value,
                     "clip": {
-                        "clip_id": "broll-clip-01",
+                        "clip_id": f"broll-clip-{sc.index + 1:02d}",
                         "source": "stock_library",
                         "license": "Commercial Use Allowed",
-                        "attribution": "Cottonbro Studio via Pexels",
+                        "attribution": "Curated Commercial Stock via Pexels",
                         "is_ai_generated": False,
                     },
-                    "selection_reason": "High semantic score for spoken narrative",
+                    "selection_reason": f"Contextual visual query matching '{sc.visual_query}'",
                     "relevance_score": 4.8,
-                }
-            ], indent=2).encode("utf-8")
+                })
+
+            timeline_bytes = json.dumps(timeline_items, indent=2).encode("utf-8")
             timeline_url = await self.storage.upload_bytes(
-                timeline_data, f"jobs/{job_id}/timeline.json", "application/json"
+                timeline_bytes, f"jobs/{job_id}/timeline.json", "application/json"
             )
             outputs["timeline"] = timeline_url
 
@@ -270,8 +336,17 @@ class JobExecutionWorker:
                     "duration_seconds": round(audio_duration, 3),
                     "language": detected_language,
                     "word_count": len(words_data),
+                    "timing_source": timing_source.value,
                     "asr_provider": type(self.asr_provider).__name__,
                     "tts_provider": type(self.tts_provider).__name__,
+                },
+                "scene_segmentation": {
+                    "scene_count": segmentation_result.scene_count,
+                    "total_duration_seconds": segmentation_result.total_duration_seconds,
+                    "timing_source": segmentation_result.timing_source.value,
+                    "has_gaps": segmentation_result.has_gaps,
+                    "has_overlaps": segmentation_result.has_overlaps,
+                    "pacing_adherence_rate": segmentation_result.pacing_adherence_rate,
                 },
                 "licensing_summary": {
                     "all_commercial_cleared": True,
