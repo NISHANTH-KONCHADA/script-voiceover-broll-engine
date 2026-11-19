@@ -335,3 +335,218 @@ async def test_batch_runner_offline_mock(tmp_path: Path):
     # Verify downloaded files in output folders
     assert (output_dir / "sample_01" / "timeline.json").exists()
     assert (output_dir / "sample_02" / "captions.srt").exists()
+
+
+# =====================================================================
+# 4. Security QA: SSRF, Protocols, Redirects, Oversized & Corrupted Media
+# =====================================================================
+
+
+def test_ssrf_forbidden_on_private_and_metadata_ips():
+    """Verifies that loopback, link-local, private IPs and cloud metadata are blocked."""
+    from broll_engine.security import validate_url_security
+
+    blocked_urls = [
+        "http://127.0.0.1/clip.mp4",
+        "http://localhost/clip.mp4",
+        "http://169.254.169.254/latest/meta-data",
+        "http://10.0.0.1/video.mp4",
+        "http://192.168.1.1/video.mp4",
+        "http://172.16.0.1/video.mp4",
+        "http://host.docker.internal/clip.mp4",
+        "http://minio/bucket/clip.mp4",
+    ]
+    for url in blocked_urls:
+        with pytest.raises(APIError) as exc_info:
+            validate_url_security(url)
+        assert exc_info.value.code == "SSRF_FORBIDDEN", f"URL {url} was not blocked with SSRF_FORBIDDEN"
+        assert exc_info.value.status_code == 400
+
+
+def test_unsupported_protocols_rejected():
+    """Verifies that non-http/https URI protocols are rejected."""
+    from broll_engine.security import validate_url_security
+
+    unsupported = [
+        "file:///etc/passwd",
+        "ftp://example.com/clip.mp4",
+        "gopher://evil.com/1",
+        "data:text/plain;base64,SGVsbG8=",
+        "javascript:alert(1)",
+    ]
+    for url in unsupported:
+        with pytest.raises(APIError) as exc_info:
+            validate_url_security(url)
+        assert exc_info.value.code == "UNSUPPORTED_PROTOCOL"
+        assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_redirect_to_private_ip_is_blocked(tmp_path: Path):
+    """Verifies that a redirect hopping to a private/internal IP is caught and rejected."""
+    from broll_engine.security import download_media_securely
+
+    dest_file = tmp_path / "target.mp4"
+
+    def mock_redirect(request: httpx.Request):
+        if "public-cdn.com" in str(request.url):
+            return httpx.Response(302, headers={"Location": "http://127.0.0.1:8000/internal_clip.mp4"})
+        return httpx.Response(200, content=b"DATA")
+
+    transport = httpx.MockTransport(mock_redirect)
+    with patch.object(httpx, "AsyncClient", return_value=httpx.AsyncClient(transport=transport)):
+        with pytest.raises(APIError) as exc_info:
+            await download_media_securely(
+                url="https://public-cdn.com/start.mp4",
+                target_path=str(dest_file),
+            )
+        assert exc_info.value.code == "SSRF_FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_oversized_download_rejected(tmp_path: Path):
+    """Verifies that downloads exceeding the maximum allowed size are aborted."""
+    from broll_engine.security import download_media_securely
+
+    dest_file = tmp_path / "oversized.mp4"
+
+    def mock_oversized(request: httpx.Request):
+        return httpx.Response(200, content=b"X" * 2000, headers={"Content-Length": "2000"})
+
+    transport = httpx.MockTransport(mock_oversized)
+    with patch.object(httpx, "AsyncClient", return_value=httpx.AsyncClient(transport=transport)):
+        with pytest.raises(APIError) as exc_info:
+            await download_media_securely(
+                url="https://public-cdn.com/large.mp4",
+                target_path=str(dest_file),
+                max_bytes=1000,  # Limit to 1000 bytes
+                allow_private_for_test=True,
+            )
+        assert exc_info.value.code == "OVERSIZED_DOWNLOAD"
+
+
+def test_corrupted_media_rejected(tmp_path: Path):
+    """Verifies that non-video or corrupted media files fail FFprobe validation."""
+    from broll_engine.security import validate_media_integrity
+
+    corrupt_file = tmp_path / "corrupt.mp4"
+    corrupt_file.write_text("This is plain text and definitely not a valid MP4 video container.")
+
+    with pytest.raises(APIError) as exc_info:
+        validate_media_integrity(str(corrupt_file))
+    assert exc_info.value.code == "CORRUPTED_MEDIA"
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_swap_clip_rejects_ssrf_url(
+    test_repo: SQLJobRepository,
+    test_storage: InMemoryStorageAdapter,
+    test_worker: JobExecutionWorker,
+):
+    """Verifies that calling swap_clip with an SSRF URL fails with status 400."""
+    service = JobService(repository=test_repo, worker=test_worker)
+    job_id = "job_ssrf_test"
+    await test_repo.create_job(
+        job_id=job_id,
+        idempotency_key="key_ssrf",
+        request_payload={"script": "Test script."},
+    )
+    # Populate scenes.json and timeline.json
+    scene_obj = Scene(
+        id="scene_ssrf_001",
+        index=0,
+        start_seconds=0.0,
+        end_seconds=2.0,
+        duration_seconds=2.0,
+        narration_text="Test scene.",
+        visual_query="test query",
+        pacing_status=PacingStatus.VALID,
+        segmentation_reason=SegmentationReason.SENTENCE_BOUNDARY,
+        timing_source=TimingSource.ASR_ACOUSTIC,
+    )
+    seg_res = SceneSegmentationResult(
+        scenes=[scene_obj],
+        total_duration_seconds=2.0,
+        scene_count=1,
+        pacing_adherence_rate=1.0,
+        has_gaps=False,
+        has_overlaps=False,
+        timing_source=TimingSource.ASR_ACOUSTIC,
+    )
+    await test_storage.upload_bytes(
+        json.dumps(seg_res.model_dump()).encode("utf-8"),
+        f"jobs/{job_id}/scenes.json",
+        "application/json",
+    )
+    await test_storage.upload_bytes(
+        json.dumps([{"clip": {"clip_id": "clip_0"}}]).encode("utf-8"),
+        f"jobs/{job_id}/timeline.json",
+        "application/json",
+    )
+    await test_repo.update_job_status(
+        job_id=job_id,
+        status=JobStatus.SUCCEEDED,
+        progress=100,
+        stage="COMPLETED",
+    )
+
+    req = ClipSwapRequest(scene_index=0, replacement_clip_url="http://169.254.169.254/latest/meta-data")
+    with pytest.raises(APIError) as exc_info:
+        await service.swap_clip(job_id, req)
+    assert exc_info.value.code == "SSRF_FORBIDDEN"
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_batch_runner_downloads_1x1_and_all_aspect_ratios(tmp_path: Path):
+    """Verifies that the batch runner requests and downloads all aspect ratios including 1:1."""
+    runner = BatchRunner(api_url="http://test-batch-api.local", concurrency=1, poll_interval=0.01)
+    input_dir = tmp_path / "in"
+    output_dir = tmp_path / "out"
+    input_dir.mkdir()
+    (input_dir / "item_square.txt").write_text("Square video test.", encoding="utf-8")
+
+    def mock_handler(request: httpx.Request):
+        url_str = str(request.url)
+        if "/health" in url_str:
+            return httpx.Response(200, json={"status": "ok"})
+
+        if "/api/v1/broll/jobs" in url_str and request.method == "POST":
+            return httpx.Response(202, json={"job_id": "job_square_01"})
+
+        if "/api/v1/jobs/job_square_01" in url_str and request.method == "GET":
+            return httpx.Response(200, json={
+                "job_id": "job_square_01",
+                "status": "succeeded",
+                "progress": 100,
+                "stage": "COMPLETED",
+                "outputs": {
+                    "videos": {
+                        "16:9": "http://mock-storage.internal/video_16x9.mp4",
+                        "9:16": "http://mock-storage.internal/video_9x16.mp4",
+                        "1:1": "http://mock-storage.internal/video_1x1.mp4",
+                    },
+                    "captions": "http://mock-storage.internal/captions.srt",
+                    "timeline": "http://mock-storage.internal/timeline.json",
+                    "manifest": "http://mock-storage.internal/manifest.json",
+                    "quality_report": "http://mock-storage.internal/quality_report.json",
+                },
+            })
+
+        if "mock-storage.internal" in url_str:
+            return httpx.Response(200, content=b"SQUARE_VIDEO_CONTENT")
+
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(mock_handler)
+    with patch.object(httpx, "AsyncClient", return_value=httpx.AsyncClient(transport=transport)):
+        results = await runner.run_batch(input_dir, output_dir, aspect_ratios=["16:9", "9:16", "1:1"])
+
+    assert len(results) == 1
+    assert results[0]["status"] == "succeeded"
+
+    item_dir = output_dir / "item_square"
+    assert (item_dir / "video_16x9.mp4").exists()
+    assert (item_dir / "video_9x16.mp4").exists()
+    assert (item_dir / "video_1x1.mp4").exists()

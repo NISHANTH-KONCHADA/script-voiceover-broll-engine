@@ -248,6 +248,7 @@ class VideoQualityInspector:
                 audio_duration_seconds=0.0,
                 drift_seconds=0.0,
                 is_synchronized=False,
+                within_tolerance=False,
                 tolerance_threshold_seconds=0.050,
             )
 
@@ -259,6 +260,7 @@ class VideoQualityInspector:
                 audio_duration_seconds=0.0,
                 drift_seconds=0.0,
                 is_synchronized=False,
+                within_tolerance=False,
                 tolerance_threshold_seconds=0.050,
             )
         streams = info.get("streams", [])

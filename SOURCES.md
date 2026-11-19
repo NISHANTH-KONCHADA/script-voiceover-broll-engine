@@ -97,11 +97,11 @@ Every model, API, library, dataset, and media source used in this project is dis
 
 To uphold honest and transparent performance metrics, the project strictly distinguishes between unit/CI test execution and live model inference:
 
-1. **Automated Test Suite (`pytest`) — 100% Mock & Offline:**
+1. **Automated Test Suite (`pytest`) — 100% Mock & Offline (93 Tests):**
    - Provider modes: `ASR_PROVIDER=mock`, `TTS_PROVIDER=mock`, `VAD_PROVIDER=silero`.
    - Requires zero network calls and zero paid API keys.
    - Synthesizes speech-like harmonic formants to validate Silero VAD neural detection without external audio files.
-   - Validates error branches (silence, corruption, duration limits, unsupported extensions), database persistence, idempotency, and job state transitions deterministically in < 15 seconds.
+   - Validates error branches (silence, corruption, duration limits, unsupported extensions), database persistence, idempotency, SSRF protection, media validation, clip swapping, partial re-rendering, and batch processing deterministically in < 60 seconds inside Docker.
 
 2. **Real Model Verification Script (`scripts/verify_real_speech.py`) — Live Inference & Synthesis:**
    - Runs actual `faster-whisper` (`tiny` model with CTranslate2 INT8 quantization on CPU) and actual `edge-tts` across four language targets:
@@ -110,6 +110,10 @@ To uphold honest and transparent performance metrics, the project strictly disti
      - Hindi (`hi-IN-SwaraNeural`)
      - Tamil (`ta-IN-PallaviNeural`)
    - Verifies real Silero VAD speech detection, language identification, word-level timestamp generation, and Real-Time Factor (RTF) latency benchmarks.
+
+3. **Multi-Scene & Multi-Aspect Benchmark (`scripts/verify_multi_scene_aspect_benchmarks.py`):**
+   - Benchmarks partial re-rendering across multiple scenes and aspect ratios (`16:9`, `9:16`, `1:1`).
+   - Verifies FFprobe stream integrity, codec compliance, and sub-30ms audio-video synchronization drift.
 
 ---
 

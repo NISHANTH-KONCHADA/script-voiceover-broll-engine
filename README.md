@@ -125,15 +125,15 @@ flowchart TD
 
 ## 3. Testing & Verification Modes
 
-### Mode A: Automated Offline Test Suite (86 Tests, 100% Offline, Zero API Keys)
+### Mode A: Automated Offline Test Suite (93 Tests, 100% Offline, Zero API Keys)
 
-Runs unit, integration, quality inspection, partial re-rendering, batch running, and failure-recovery tests deterministically using mock providers and in-memory persistence:
+Runs unit, integration, quality inspection, partial re-rendering, batch running, SSRF security validation, and failure-recovery tests deterministically using mock providers and in-memory persistence:
 
 ```bash
-# Run all 86 automated tests on host
+# Run all 93 automated tests on host
 pytest -v
 
-# OR run all 86 automated tests inside isolated Docker container
+# OR run all 93 automated tests inside isolated Docker container
 docker compose run --rm test
 ```
 

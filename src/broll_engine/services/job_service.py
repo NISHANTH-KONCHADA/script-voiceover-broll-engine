@@ -18,10 +18,12 @@ from broll_engine.api.schemas.job import (
     JobOutputs,
     JobStatus,
 )
+from broll_engine.config import settings
 from broll_engine.logging import get_logger
 from broll_engine.models.retrieval import AssetLicense, SelectedClip
 from broll_engine.models.scenes import Scene, SceneSegmentationResult
 from broll_engine.repositories.base import JobRecord, JobRepository
+from broll_engine.security import download_media_securely, validate_media_integrity
 from broll_engine.services.webhook import dispatch_webhook
 from broll_engine.worker.execution import JobExecutionWorker
 
@@ -191,27 +193,30 @@ class JobService:
         new_provider = "custom"
 
         try:
-            if request.new_clip_url:
-                if os.path.exists(request.new_clip_url):
-                    new_clip_path = request.new_clip_url
-                else:
+            effective_url = request.new_clip_url or request.replacement_clip_url
+            if effective_url:
+                if effective_url.startswith(("http://", "https://")):
                     tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
                     tmp_path = tmp.name
                     tmp.close()
                     temp_files_to_cleanup.append(tmp_path)
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        resp = await client.get(request.new_clip_url)
-                        if not resp.is_success:
-                            raise APIError(
-                                code="CLIP_DOWNLOAD_FAILED",
-                                message=f"Failed to download replacement clip from {request.new_clip_url}: HTTP {resp.status_code}",
-                                status_code=400,
-                                retryable=False,
-                            )
-                        with open(tmp_path, "wb") as f:
-                            f.write(resp.content)
+                    await download_media_securely(
+                        url=effective_url,
+                        target_path=tmp_path,
+                    )
                     new_clip_path = tmp_path
-                new_selection_reason = f"Replaced with user-supplied URL '{request.new_clip_url}'"
+                elif os.path.exists(effective_url):
+                    # Local path validated for media integrity
+                    validate_media_integrity(effective_url)
+                    new_clip_path = effective_url
+                else:
+                    raise APIError(
+                        code="UNSUPPORTED_PROTOCOL",
+                        message=f"Invalid or unsupported clip URL: '{effective_url}'. Must be http://, https://, or a valid accessible file.",
+                        status_code=400,
+                        retryable=False,
+                    )
+                new_selection_reason = f"Replaced with user-supplied URL '{effective_url}'"
                 new_provider = "user_direct_upload"
 
             elif request.new_query:
@@ -264,6 +269,7 @@ class JobService:
             )
 
             # 3. Ensure all other scenes have valid clips
+            cache_dir = Path(settings.footage_cache_dir).resolve() / f"segments_{job_id}"
             existing_clips: List[SelectedClip] = []
             for sc in scenes:
                 if sc.index == request.scene_index:
@@ -271,16 +277,20 @@ class JobService:
                 else:
                     item = timeline_items[sc.index] if sc.index < len(timeline_items) else {}
                     clip_item = item.get("clip", {})
-                    sc_proc = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-                    sc_path = sc_proc.name
-                    sc_proc.close()
-                    temp_files_to_cleanup.append(sc_path)
-                    await self.worker.retrieval_engine.procedural_provider.generate_clip(
-                        target_path=sc_path,
-                        duration=sc.duration_seconds,
-                        aspect_ratio="16:9",
-                        query=sc.visual_query,
-                    )
+                    cached_seg = cache_dir / f"seg_16x9_{sc.id}.mp4"
+                    if cached_seg.exists():
+                        sc_path = str(cached_seg)
+                    else:
+                        sc_proc = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+                        sc_path = sc_proc.name
+                        sc_proc.close()
+                        temp_files_to_cleanup.append(sc_path)
+                        await self.worker.retrieval_engine.procedural_provider.generate_clip(
+                            target_path=sc_path,
+                            duration=sc.duration_seconds,
+                            aspect_ratio="16:9",
+                            query=sc.visual_query,
+                        )
                     existing_clips.append(SelectedClip(
                         scene_id=sc.id,
                         scene_index=sc.index,

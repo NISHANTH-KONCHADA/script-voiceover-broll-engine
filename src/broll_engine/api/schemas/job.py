@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
 class AspectRatio(str, Enum):
@@ -84,10 +84,21 @@ class JobDetailResponse(BaseModel):
 
 class ClipSwapRequest(BaseModel):
     """Payload for POST /api/v1/broll/jobs/{job_id}/swap-clip."""
+    model_config = ConfigDict(populate_by_name=True)
+
     scene_index: int = Field(..., ge=0, description="0-indexed scene to replace")
     new_clip_url: Optional[str] = Field(default=None, description="Direct URL to replacement video clip")
+    replacement_clip_url: Optional[str] = Field(default=None, description="Direct URL to replacement video clip (alias for new_clip_url)")
     new_query: Optional[str] = Field(default=None, description="New visual search query to retrieve replacement clip")
     style: Optional[str] = Field(default=None, description="Optional style override")
+
+    @model_validator(mode="after")
+    def reconcile_urls(self) -> "ClipSwapRequest":
+        if not self.new_clip_url and self.replacement_clip_url:
+            self.new_clip_url = self.replacement_clip_url
+        elif not self.replacement_clip_url and self.new_clip_url:
+            self.replacement_clip_url = self.new_clip_url
+        return self
 
 
 class ClipSwapResponse(BaseModel):

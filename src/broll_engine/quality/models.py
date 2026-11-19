@@ -44,11 +44,12 @@ class StreamValidationResult(BaseModel):
 
 
 class SyncValidationResult(BaseModel):
-    video_duration_seconds: float
-    audio_duration_seconds: float
-    drift_seconds: float
-    is_synchronized: bool
-    within_tolerance: bool  # drift <= 0.05s (50ms)
+    video_duration_seconds: float = 0.0
+    audio_duration_seconds: float = 0.0
+    drift_seconds: float = 0.0
+    is_synchronized: bool = False
+    within_tolerance: bool = False  # drift <= 0.05s (50ms)
+    tolerance_threshold_seconds: float = 0.050
 
 
 class SubtitleValidationResult(BaseModel):

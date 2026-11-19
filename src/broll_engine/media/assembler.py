@@ -129,6 +129,10 @@ class VideoAssemblyEngine:
             rendered_videos: Dict[str, str] = {}
             media_probes: Dict[str, dict] = {}
 
+            # Cache directory for persistent scene segments
+            cache_dir = Path(settings.footage_cache_dir).resolve() / f"segments_{job_id}"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
             # 3. Render video for each requested aspect ratio
             for aspect in aspect_ratios:
                 aspect_str = aspect if isinstance(aspect, str) else aspect.value
@@ -143,7 +147,7 @@ class VideoAssemblyEngine:
                     if not clip_src or not os.path.exists(clip_src):
                         raise VideoAssemblyError(f"Missing local media file for scene '{scene.id}'.")
 
-                    seg_target = str(work_dir / f"seg_{safe_aspect}_{scene.id}.mp4")
+                    seg_target = str(cache_dir / f"seg_{safe_aspect}_{scene.id}.mp4")
                     await self.render_scene_clip(
                         input_media_path=clip_src,
                         target_path=seg_target,
@@ -154,7 +158,7 @@ class VideoAssemblyEngine:
 
                 # Write concat demuxer manifest
                 concat_list_file = work_dir / f"concat_{safe_aspect}.txt"
-                concat_lines = [f"file '{Path(p).as_posix()}'" for p in scene_segment_paths]
+                concat_lines = [f"file '{Path(p).resolve().as_posix()}'" for p in scene_segment_paths]
                 concat_list_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
 
                 # Build filtergraph: concat videos + optional subtitle burn-in
@@ -269,6 +273,10 @@ class VideoAssemblyEngine:
             rendered_videos: Dict[str, str] = {}
             media_probes: Dict[str, dict] = {}
 
+            # Cache directory for persistent scene segments
+            cache_dir = Path(settings.footage_cache_dir).resolve() / f"segments_{job_id}"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
             # 3. Partial render for each aspect ratio
             for aspect in aspect_ratios:
                 aspect_str = aspect if isinstance(aspect, str) else aspect.value
@@ -277,7 +285,7 @@ class VideoAssemblyEngine:
 
                 scene_segment_paths = []
                 for idx, scene in enumerate(scenes):
-                    seg_target = str(work_dir / f"seg_{safe_aspect}_{scene.id}.mp4")
+                    seg_target = str(cache_dir / f"seg_{safe_aspect}_{scene.id}.mp4")
 
                     if idx == scene_index:
                         # Re-render ONLY the affected scene with replacement clip
@@ -287,8 +295,8 @@ class VideoAssemblyEngine:
                             duration=scene.duration_seconds,
                             aspect_ratio=aspect_str,
                         )
-                    else:
-                        # Use existing clip for unaffected scenes
+                    elif not os.path.exists(seg_target):
+                        # Use existing clip for unaffected scenes only if not already cached
                         clip = clip_map.get(scene.id)
                         clip_src = clip.local_path if clip and clip.local_path else None
                         if not clip_src or not os.path.exists(clip_src):
@@ -303,7 +311,7 @@ class VideoAssemblyEngine:
 
                 # Write concat demuxer manifest
                 concat_list_file = work_dir / f"concat_{safe_aspect}.txt"
-                concat_lines = [f"file '{Path(p).as_posix()}'" for p in scene_segment_paths]
+                concat_lines = [f"file '{Path(p).resolve().as_posix()}'" for p in scene_segment_paths]
                 concat_list_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
 
                 # Build filtergraph: concat videos + optional subtitle burn-in

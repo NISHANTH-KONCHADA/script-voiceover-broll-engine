@@ -150,8 +150,12 @@ class ProceduralFallbackProvider(BaseFootageProvider):
         duration: float,
         aspect_ratio: str = "16:9",
         theme: str = "default",
+        query: Optional[str] = None,
     ) -> str:
         """Renders the actual MP4 file via FFmpeg lavfi filtergraph asynchronously."""
+        if query and theme == "default":
+            theme = query
+
         target_file = Path(target_path)
         target_file.parent.mkdir(parents=True, exist_ok=True)
 

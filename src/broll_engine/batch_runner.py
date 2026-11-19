@@ -160,8 +160,14 @@ class BatchRunner:
         except Exception as e:
             print(f"Warning: could not download {url}: {e}")
 
-    async def run_batch(self, input_dir: Path, output_dir: Path) -> List[Dict[str, Any]]:
+    async def run_batch(
+        self,
+        input_dir: Path,
+        output_dir: Path,
+        aspect_ratios: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
         """Processes all input files in input_dir concurrently up to self.concurrency."""
+        target_ratios = aspect_ratios or ["16:9", "9:16", "1:1"]
         output_dir.mkdir(parents=True, exist_ok=True)
         items: List[tuple[str, Dict[str, Any]]] = []
 
@@ -172,13 +178,15 @@ class BatchRunner:
                     if script_text:
                         items.append((p.stem, {
                             "script": script_text,
-                            "aspect_ratios": ["16:9", "9:16"],
+                            "aspect_ratios": target_ratios,
                             "style": "cinematic, modern, clean footage",
                         }))
                 elif p.suffix.lower() == ".json":
                     try:
                         data = json.loads(p.read_text(encoding="utf-8"))
                         if isinstance(data, dict):
+                            if "aspect_ratios" not in data:
+                                data["aspect_ratios"] = target_ratios
                             items.append((p.stem, data))
                     except Exception as e:
                         print(f"Skipping invalid JSON file {p}: {e}")
@@ -186,7 +194,7 @@ class BatchRunner:
                     # Local audio file path
                     items.append((p.stem, {
                         "audio_url": str(p.resolve()),
-                        "aspect_ratios": ["16:9"],
+                        "aspect_ratios": target_ratios,
                         "style": "clean b-roll footage",
                     }))
 
@@ -231,6 +239,12 @@ def main() -> None:
     parser.add_argument("--api-url", default="http://localhost:8000", help="Base URL of B-roll engine API")
     parser.add_argument("--concurrency", type=int, default=2, help="Max concurrent jobs")
     parser.add_argument("--timeout", type=float, default=180.0, help="Per-job timeout in seconds")
+    parser.add_argument(
+        "--aspect-ratios",
+        nargs="+",
+        default=["16:9", "9:16", "1:1"],
+        help="Target aspect ratios to request and download (default: 16:9 9:16 1:1)",
+    )
 
     args = parser.parse_args()
 
@@ -241,7 +255,13 @@ def main() -> None:
     )
 
     try:
-        results = asyncio.run(runner.run_batch(args.input_dir, args.output_dir))
+        results = asyncio.run(
+            runner.run_batch(
+                input_dir=args.input_dir,
+                output_dir=args.output_dir,
+                aspect_ratios=args.aspect_ratios,
+            )
+        )
         failures = [r for r in results if r.get("status") != "succeeded"]
         if failures:
             print(f"Batch completed with {len(failures)} failures.")

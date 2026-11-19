@@ -208,6 +208,12 @@ components:
           - type: 'null'
           title: New Clip Url
           description: Direct URL to replacement video clip
+        replacement_clip_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Replacement Clip Url
+          description: Direct URL to replacement video clip (alias for new_clip_url)
         new_query:
           anyOf:
           - type: string
