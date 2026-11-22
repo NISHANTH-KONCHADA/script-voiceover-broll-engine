@@ -56,6 +56,12 @@ class PixabayProvider(BaseFootageProvider):
             logger.warning("Pixabay API key is not configured. Skipping provider.")
             return []
 
+        # Pixabay rejects queries longer than 100 characters; trim at a word boundary.
+        if len(query) > 100:
+            trimmed = query[:100].rsplit(" ", 1)[0].rstrip(" ,")
+            logger.info("Truncating over-length Pixabay query (%d -> %d chars)", len(query), len(trimmed))
+            query = trimmed or query[:100]
+
         params = {
             "key": self.api_key.strip(),
             "q": query,

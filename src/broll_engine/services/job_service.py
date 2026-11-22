@@ -1,9 +1,11 @@
+import asyncio
 import json
 import os
 import shutil
 import tempfile
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import httpx
@@ -39,6 +41,50 @@ class JobService:
 
     def _generate_job_id(self) -> str:
         return f"broll_{uuid.uuid4().hex[:12]}"
+
+    async def _execute_with_watchdog(self, job_id: str, payload_dict: Dict[str, Any]) -> None:
+        """Runs execute_job under a hard wall-clock deadline.
+
+        A stalled pipeline step (e.g. a drip-feeding CDN download) can otherwise
+        pin a job forever; the watchdog marks it FAILED instead.
+        """
+        timeout = settings.job_execution_timeout_seconds
+        try:
+            await asyncio.wait_for(
+                self.worker.execute_job(job_id, payload_dict),
+                timeout=timeout if timeout and timeout > 0 else None,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Job {job_id} exceeded execution watchdog of {timeout}s; marking FAILED")
+            error_payload = {
+                "code": "JOB_EXECUTION_TIMEOUT",
+                "message": f"Job exceeded the maximum allowed execution time of {timeout} seconds.",
+                "retryable": True,
+                "details": {"timeout_seconds": timeout},
+            }
+            try:
+                await self.repository.update_job_status(
+                    job_id=job_id,
+                    status=JobStatus.FAILED,
+                    progress=100,
+                    stage="FAILED",
+                    error=error_payload,
+                )
+            except Exception:
+                logger.exception(f"Failed to record watchdog timeout for job {job_id}")
+            callback_url = payload_dict.get("callback_url")
+            if callback_url:
+                payload = {
+                    "job_id": job_id,
+                    "status": JobStatus.FAILED.value,
+                    "progress": 100,
+                    "error": error_payload,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                try:
+                    await dispatch_webhook(callback_url, payload, secret=payload_dict.get("webhook_secret"))
+                except Exception:
+                    logger.exception(f"Watchdog webhook dispatch failed for job {job_id}")
 
     def _record_to_detail_response(self, record: JobRecord) -> JobDetailResponse:
         outputs = None
@@ -98,18 +144,38 @@ class JobService:
         job_id = self._generate_job_id()
         payload_dict = request.model_dump(mode="json")
 
-        record = await self.repository.create_job(
-            job_id=job_id,
-            idempotency_key=idempotency_key,
-            request_payload=payload_dict,
-        )
+        try:
+            record = await self.repository.create_job(
+                job_id=job_id,
+                idempotency_key=idempotency_key,
+                request_payload=payload_dict,
+            )
+        except Exception:
+            # Concurrent submissions with the same idempotency key can race the
+            # uniqueness constraint; resolve by returning the winning request's job.
+            if idempotency_key:
+                existing_record = await self.repository.get_job_by_idempotency_key(idempotency_key)
+                if existing_record:
+                    logger.info(
+                        f"Idempotent race resolved for key '{idempotency_key}'; returning existing job {existing_record.job_id}"
+                    )
+                    return (
+                        JobCreateResponse(
+                            job_id=existing_record.job_id,
+                            status=existing_record.status,
+                            progress=existing_record.progress,
+                            created_at=existing_record.created_at,
+                            check_status_url=f"/api/v1/jobs/{existing_record.job_id}",
+                        ),
+                        True,
+                    )
+            raise
 
-        # Step 3: Trigger async execution
+        # Step 3: Trigger async execution (wrapped in a watchdog deadline)
         if background_tasks:
-            background_tasks.add_task(self.worker.execute_job, job_id, payload_dict)
+            background_tasks.add_task(self._execute_with_watchdog, job_id, payload_dict)
         else:
-            import asyncio
-            asyncio.create_task(self.worker.execute_job, job_id, payload_dict)
+            asyncio.create_task(self._execute_with_watchdog(job_id, payload_dict))
 
         logger.info(f"Enqueued new job {job_id} (idempotency_key={idempotency_key})")
         return (
@@ -134,7 +200,7 @@ class JobService:
         return [self._record_to_detail_response(r) for r in records]
 
     async def swap_clip(self, job_id: str, request: ClipSwapRequest) -> ClipSwapResponse:
-        """Replaces a single scene's footage and re-assembles the video in <3 seconds (Advanced Criterion 2)."""
+        """Replaces a single scene's footage and re-assembles only affected regions (Advanced Criterion 2)."""
         start_time = time.time()
         record = await self.repository.get_job(job_id)
         if not record:
@@ -321,7 +387,11 @@ class JobService:
             temp_files_to_cleanup.append(master_audio_tmp_path)
 
             # 5. Execute partial re-rendering
-            aspect_ratios = record.request_payload.get("aspect_ratios", ["16:9"])
+            aspect_ratios = (
+                record.request_payload.get("aspect_ratios")
+                or record.request_payload.get("target_aspect_ratios")
+                or ["16:9"]
+            )
             burn_in_captions = record.request_payload.get("captions", {}).get("burn_in", True)
             render_out_dir = Path(tempfile.mkdtemp(prefix=f"broll_swap_out_{job_id}_"))
 

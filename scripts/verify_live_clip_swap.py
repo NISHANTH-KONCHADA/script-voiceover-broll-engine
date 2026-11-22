@@ -1,15 +1,27 @@
-"""Live demonstration and verification of partial re-rendering clip swap (Advanced Criterion 2)."""
+"""Live demonstration and verification of partial re-rendering clip swap (Advanced Criterion 2).
+
+Usage:
+    BROLL_JOB_ID=<job_id> python scripts/verify_live_clip_swap.py
+    # or pass the job id as the first CLI argument
+    python scripts/verify_live_clip_swap.py <job_id>
+"""
 
 import asyncio
 import json
+import os
+import sys
 import time
 import httpx
 
 async def main():
+    job_id = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("BROLL_JOB_ID", "")
+    if not job_id:
+        print("ERROR: provide a completed job_id via CLI arg or BROLL_JOB_ID env var.")
+        sys.exit(2)
+
+    base_url = os.environ.get("BROLL_BASE_URL", "http://localhost:8000")
     async with httpx.AsyncClient(timeout=60.0) as client:
-        # First check status of existing completed job
-        job_id = "broll_2706d2ae613d"
-        resp = await client.get(f"http://localhost:8000/api/v1/jobs/{job_id}")
+        resp = await client.get(f"{base_url}/api/v1/jobs/{job_id}")
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
         job_data = resp.json()
         print(f"Target Job: {job_id} (Status: {job_data['status']}, Progress: {job_data['progress']}%)")
@@ -24,7 +36,7 @@ async def main():
         print(f"\nCalling POST /api/v1/broll/jobs/{job_id}/swap-clip...")
         t0 = time.time()
         swap_resp = await client.post(
-            f"http://localhost:8000/api/v1/broll/jobs/{job_id}/swap-clip",
+            f"{base_url}/api/v1/broll/jobs/{job_id}/swap-clip",
             json=swap_payload,
             timeout=30.0,
         )

@@ -21,6 +21,7 @@ from broll_engine.retrieval.dedup import ClipDeduplicator
 from broll_engine.retrieval.downloader import AssetDownloader, MediaValidationError
 from broll_engine.retrieval.pexels import PexelsProvider
 from broll_engine.retrieval.pixabay import PixabayProvider
+from broll_engine.retrieval.storyblocks import StoryblocksFootageProvider
 from broll_engine.retrieval.procedural import ProceduralFallbackProvider
 from broll_engine.retrieval.ranker import SemanticRelevanceRanker
 
@@ -52,10 +53,15 @@ class FootageRetrievalEngine:
         if providers is not None:
             self.providers = providers
         else:
-            # Default provider chain: Pexels -> Pixabay -> Procedural
+            # Default provider chain: Pexels -> Pixabay -> Storyblocks -> Procedural
             self.providers = [
                 PexelsProvider(),
                 PixabayProvider(),
+                StoryblocksFootageProvider(
+                    public_key=settings.storyblocks_public_key,
+                    private_key=settings.storyblocks_private_key,
+                    enabled=settings.storyblocks_enabled,
+                ),
             ]
 
     async def _query_providers_with_failover(
@@ -219,6 +225,15 @@ class FootageRetrievalEngine:
             content_hash=sha256,
         )
 
+    def reset_deduplication(self) -> None:
+        """Clears the deduplication registry.
+
+        The engine is a long-lived singleton shared across jobs; per-video
+        uniqueness must be tracked per job, so the registry is reset at the
+        start of every retrieve_for_scenes call (and single-scene swaps).
+        """
+        self.deduplicator = ClipDeduplicator()
+
     async def retrieve_for_scenes(
         self,
         scenes: List[Scene],
@@ -226,6 +241,7 @@ class FootageRetrievalEngine:
         job_id: str = "job_default",
     ) -> FootageRetrievalResult:
         """Retrieves and maps footage assets for all scenes sequentially."""
+        self.reset_deduplication()
         clips: List[SelectedClip] = []
         providers_used: Set[str] = set()
 

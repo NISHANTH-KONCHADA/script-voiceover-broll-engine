@@ -185,6 +185,7 @@ class AudioPreflightValidator:
 
         speech_detected = False
         speech_ratio = 0.0
+        vad_completed = False
 
         # 2. Silero VAD as primary speech detector
         if self.vad_provider == "silero":
@@ -208,6 +209,7 @@ class AudioPreflightValidator:
                     vad_options=VadOptions(threshold=0.4, min_speech_duration_ms=100),
                 )
 
+                vad_completed = True
                 if speech_timestamps:
                     total_speech_samples = sum(item["end"] - item["start"] for item in speech_timestamps)
                     speech_ratio = float(total_speech_samples) / float(len(resampled_mono))
@@ -219,8 +221,9 @@ class AudioPreflightValidator:
                 logger.warning(f"Silero VAD execution failed, falling back to energy analysis: {vad_err}")
                 speech_detected = False
 
-        # 3. Energy-based fallback analysis if vad_provider == 'energy' or Silero was bypassed
-        if self.vad_provider == "energy" or (not speech_detected and self.vad_provider != "silero"):
+        # 3. Energy-based fallback when vad_provider == 'energy', Silero failed to execute,
+        #    or a non-silero provider detected nothing
+        if self.vad_provider == "energy" or (self.vad_provider == "silero" and not vad_completed) or (not speech_detected and self.vad_provider not in ("silero", "energy")):
             frame_size = int(sample_rate * 0.030)
             if frame_size == 0 or len(mono) < frame_size:
                 speech_ratio = 1.0 if overall_dbfs > -35.0 else 0.0

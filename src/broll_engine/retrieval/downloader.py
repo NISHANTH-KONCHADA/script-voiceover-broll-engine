@@ -24,11 +24,20 @@ class MediaValidationError(Exception):
 class AssetDownloader:
     """Manages asynchronous download, disk caching, and media validation of B-roll footage."""
 
-    def __init__(self, cache_dir: Optional[str] = None, timeout: float = 30.0, max_retries: int = 2):
+    def __init__(
+        self,
+        cache_dir: Optional[str] = None,
+        timeout: float = 30.0,
+        max_retries: int = 2,
+        total_timeout: Optional[float] = None,
+        max_bytes: int = 100 * 1024 * 1024,
+    ):
         self.cache_dir = Path(cache_dir or settings.footage_cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.timeout = timeout
         self.max_retries = max_retries
+        self.total_timeout = total_timeout or settings.media_download_total_timeout_seconds
+        self.max_bytes = max_bytes
 
     def get_cached_path(self, asset_id: str, extension: str = "mp4") -> Path:
         safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in asset_id)
@@ -67,22 +76,15 @@ class AssetDownloader:
                 sha256 = self._compute_sha256(str(target_path))
                 return str(target_path), sha256, meta
 
-        # 3. Asynchronous HTTP streaming download with retries
+        # 3. Asynchronous HTTP streaming download with retries and a hard total deadline
         last_error = None
         for attempt in range(self.max_retries + 1):
             try:
                 temp_path = self.cache_dir / f"{target_path.stem}.tmp_{attempt}"
-                async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-                    async with client.stream("GET", download_url) as response:
-                        if response.status_code != 200:
-                            raise httpx.HTTPStatusError(
-                                f"HTTP {response.status_code}",
-                                request=response.request,
-                                response=response,
-                            )
-                        with open(temp_path, "wb") as f:
-                            async for chunk in response.aiter_bytes(chunk_size=65536):
-                                f.write(chunk)
+                await asyncio.wait_for(
+                    self._stream_to_disk(download_url, temp_path),
+                    timeout=self.total_timeout,
+                )
 
                 # Validate downloaded temp file before moving to cache
                 meta = await self.validate_media(str(temp_path))
@@ -91,6 +93,17 @@ class AssetDownloader:
                 logger.info("Successfully downloaded asset '%s' (%.2f MB)", asset_id, target_path.stat().st_size / (1024 * 1024))
                 return str(target_path), sha256, meta
 
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Download attempt %d for asset '%s' exceeded total deadline of %.0fs",
+                    attempt + 1, asset_id, self.total_timeout,
+                )
+                last_error = f"download exceeded total deadline of {self.total_timeout}s"
+                temp_path = self.cache_dir / f"{target_path.stem}.tmp_{attempt}"
+                if temp_path.exists():
+                    temp_path.unlink(missing_ok=True)
+                if attempt < self.max_retries:
+                    await asyncio.sleep(1.0 * (2 ** attempt))
             except Exception as e:
                 logger.warning("Download attempt %d for asset '%s' failed: %s", attempt + 1, asset_id, e)
                 last_error = e
@@ -101,6 +114,31 @@ class AssetDownloader:
                     await asyncio.sleep(1.0 * (2 ** attempt))
 
         raise MediaValidationError(f"Failed to download and validate media asset '{asset_id}': {last_error}")
+
+    async def _stream_to_disk(self, download_url: str, temp_path: Path) -> None:
+        """Streams a remote asset to disk with a cumulative byte-size cap.
+
+        Enforcing a hard byte ceiling protects disk/memory from oversized or
+        maliciously unbounded responses; the enclosing asyncio.wait_for applies
+        the total wall-clock deadline so stalled/slow-trickling streams abort.
+        """
+        bytes_written = 0
+        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+            async with client.stream("GET", download_url) as response:
+                if response.status_code != 200:
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {response.status_code}",
+                        request=response.request,
+                        response=response,
+                    )
+                with open(temp_path, "wb") as f:
+                    async for chunk in response.aiter_bytes(chunk_size=65536):
+                        bytes_written += len(chunk)
+                        if bytes_written > self.max_bytes:
+                            raise MediaValidationError(
+                                f"Asset download exceeded maximum size limit of {self.max_bytes} bytes."
+                            )
+                        f.write(chunk)
 
     async def validate_media(self, file_path: str) -> dict:
         """Validates video integrity via FFprobe."""

@@ -10,6 +10,7 @@ import httpx
 
 from broll_engine.api.routes.errors import APIError
 from broll_engine.api.schemas.job import JobStatus, SceneHint
+from broll_engine.config import settings
 from broll_engine.logging import get_logger, job_id_ctx
 from broll_engine.media.assembler import VideoAssemblyEngine
 from broll_engine.models.scenes import TimingSource
@@ -58,6 +59,8 @@ class JobExecutionWorker:
 
     async def _fetch_audio(self, audio_url: str) -> str:
         """Downloads or resolves local path for audio input."""
+        from broll_engine.security import validate_url_security
+
         # Check if local file path
         if os.path.exists(audio_url):
             return audio_url
@@ -67,6 +70,9 @@ class JobExecutionWorker:
             local_path = audio_url[7:]
             if os.path.exists(local_path):
                 return local_path
+
+        # SSRF validation for remote URLs (relaxed in non-production so local test servers work)
+        validate_url_security(audio_url, allow_private_for_test=(settings.app_env != "production"))
 
         # Download from remote HTTP(S) URL
         ext = Path(audio_url.split("?")[0]).suffix.lower() or ".mp3"
@@ -100,6 +106,17 @@ class JobExecutionWorker:
     async def execute_job(self, job_id: str, request_payload: Dict[str, Any]) -> None:
         job_id_ctx.set(job_id)
         logger.info(f"Starting execution for job {job_id}")
+
+        import time as _time
+        job_t0 = _time.time()
+        stage_timings: Dict[str, float] = {}
+        stage_t = job_t0
+
+        def _mark(stage_name: str) -> None:
+            nonlocal stage_t
+            now = _time.time()
+            stage_timings[stage_name] = round(now - stage_t, 3)
+            stage_t = now
 
         temp_files_to_cleanup = []
 
@@ -179,6 +196,7 @@ class JobExecutionWorker:
                 master_audio_bytes = tts_result.audio_bytes
 
             # Step 3: Semantic Scene Segmentation & Contextual Query Disambiguation (Phase 3)
+            _mark("ingestion_and_speech")
             if self.step_delay > 0:
                 await asyncio.sleep(self.step_delay)
             await self.repository.update_job_status(
@@ -232,6 +250,7 @@ class JobExecutionWorker:
             )
 
             # Step 4: Footage Retrieval, Semantic Ranking & Deduplication (Phase 4)
+            _mark("scene_segmentation_and_disambiguation")
             if self.step_delay > 0:
                 await asyncio.sleep(self.step_delay)
             await self.repository.update_job_status(
@@ -241,7 +260,11 @@ class JobExecutionWorker:
                 stage="FOOTAGE_RETRIEVAL_AND_DEDUP",
             )
 
-            aspect_ratios = request_payload.get("aspect_ratios", ["16:9"])
+            aspect_ratios = (
+                request_payload.get("aspect_ratios")
+                or request_payload.get("target_aspect_ratios")
+                or ["16:9"]
+            )
             primary_aspect = aspect_ratios[0] if aspect_ratios else "16:9"
             primary_aspect_str = primary_aspect if isinstance(primary_aspect, str) else primary_aspect.value
 
@@ -252,6 +275,7 @@ class JobExecutionWorker:
             )
 
             # Step 5: Audio Normalization, Subtitles & Multi-Aspect Assembly (Phase 5)
+            _mark("footage_retrieval_and_dedup")
             if self.step_delay > 0:
                 await asyncio.sleep(self.step_delay)
             await self.repository.update_job_status(
@@ -265,29 +289,26 @@ class JobExecutionWorker:
             master_audio_tmp.write_bytes(master_audio_bytes)
 
             burn_in_captions = True
+            captions_srt_flag = True
             captions_cfg = request_payload.get("captions", {})
             if isinstance(captions_cfg, dict):
                 burn_in_captions = captions_cfg.get("burn_in", True)
+                captions_srt_flag = captions_cfg.get("srt", True)
 
             render_output_dir = Path(tempfile.gettempdir()) / f"broll_rendered_{job_id}"
             render_output_dir.mkdir(parents=True, exist_ok=True)
 
-            assembly_result = None
-            try:
-                assembly_result = await self.assembly_engine.assemble_multi_aspect_videos(
-                    scenes=segmentation_result.scenes,
-                    clips=retrieval_result.clips,
-                    master_audio_path=str(master_audio_tmp),
-                    output_dir=str(render_output_dir),
-                    aspect_ratios=aspect_ratios,
-                    burn_in_captions=burn_in_captions,
-                    job_id=job_id,
-                )
-            except Exception as e:
-                logger.error("Video assembly failed (%s). Falling back to mock artifact payload.", e)
-            finally:
-                if master_audio_tmp.exists():
-                    master_audio_tmp.unlink(missing_ok=True)
+            assembly_result = await self.assembly_engine.assemble_multi_aspect_videos(
+                scenes=segmentation_result.scenes,
+                clips=retrieval_result.clips,
+                master_audio_path=str(master_audio_tmp),
+                output_dir=str(render_output_dir),
+                aspect_ratios=aspect_ratios,
+                burn_in_captions=burn_in_captions,
+                job_id=job_id,
+            )
+            if master_audio_tmp.exists():
+                master_audio_tmp.unlink(missing_ok=True)
 
             # Step 6: Artifact Upload & Delivery
             outputs: Dict[str, Any] = {"videos": {}}
@@ -327,17 +348,25 @@ class JobExecutionWorker:
                 safe_ratio = ratio_str.replace(":", "x")
                 key = f"jobs/{job_id}/video_{safe_ratio}.mp4"
                 rendered_file = assembly_result["videos"].get(ratio_str) if assembly_result and "videos" in assembly_result else None
-                if rendered_file and os.path.exists(rendered_file):
-                    url = await self.storage.upload_file(rendered_file, key, "video/mp4")
-                else:
-                    mock_video_bytes = b"MP4_PHASE5_CONTAINER_DATA"
-                    url = await self.storage.upload_bytes(mock_video_bytes, key, "video/mp4")
+                if not rendered_file or not os.path.exists(rendered_file):
+                    raise RuntimeError(
+                        f"Rendered video for aspect ratio '{ratio_str}' is missing after assembly; "
+                        "refusing to upload a placeholder artifact."
+                    )
+                url = await self.storage.upload_file(rendered_file, key, "video/mp4")
                 outputs["videos"][ratio_str] = url
 
-            # Upload captions sidecar
+                # Upload clean video without burned-in captions if generated
+                clean_file = assembly_result["videos"].get(f"clean_{ratio_str}") if assembly_result and "videos" in assembly_result else None
+                if clean_file and os.path.exists(clean_file):
+                    await self.storage.upload_file(clean_file, f"jobs/{job_id}/clean_video_{safe_ratio}.mp4", "video/mp4")
+
+            # Upload captions sidecar (honors captions.srt=false)
             srt_path = assembly_result.get("captions_srt_path") if assembly_result else None
             captions_str = ""
-            if srt_path and os.path.exists(srt_path):
+            if not captions_srt_flag:
+                captions_url = None
+            elif srt_path and os.path.exists(srt_path):
                 captions_url = await self.storage.upload_file(srt_path, f"jobs/{job_id}/captions.srt", "text/plain")
                 try:
                     captions_str = Path(srt_path).read_text(encoding="utf-8")
@@ -348,7 +377,8 @@ class JobExecutionWorker:
                 captions_url = await self.storage.upload_bytes(
                     captions_str.encode("utf-8"), f"jobs/{job_id}/captions.srt", "text/plain"
                 )
-            outputs["captions"] = captions_url
+            if captions_url is not None:
+                outputs["captions"] = captions_url
 
             # Step 7: Video Quality Assessment, Saliency & Scoring (Phase 6)
             rendered_video_paths = assembly_result.get("videos", {}) if assembly_result else {}
@@ -411,10 +441,50 @@ class JobExecutionWorker:
             outputs["timeline"] = timeline_url
 
             # Upload manifest.json with full legal clearance & asset provenance
+            try:
+                import edge_tts as _edge_tts
+                edge_tts_version = getattr(_edge_tts, "__version__", "unknown")
+            except ImportError:
+                edge_tts_version = "not installed"
+            try:
+                import faster_whisper as _fw
+                fw_version = getattr(_fw, "__version__", "unknown")
+            except ImportError:
+                fw_version = "not installed"
+            try:
+                import broll_engine as _engine_pkg
+                engine_version = getattr(_engine_pkg, "__version__", "unknown")
+            except Exception:
+                engine_version = "unknown"
+
+            sanitized_settings = {
+                k: v for k, v in request_payload.items() if k != "webhook_secret"
+            }
+            total_seconds = round(_time.time() - job_t0, 3)
             manifest_data = json.dumps({
                 "job_id": job_id,
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "settings": request_payload,
+                "engine_version": engine_version,
+                "settings": sanitized_settings,
+                "models": {
+                    "asr_provider": settings.asr_provider,
+                    "asr_model": getattr(settings, "whisper_model_size", None) if settings.asr_provider == "faster-whisper" else None,
+                    "faster_whisper_version": fw_version if settings.asr_provider == "faster-whisper" else None,
+                    "tts_provider": settings.tts_provider,
+                    "edge_tts_version": edge_tts_version if settings.tts_provider == "edge-tts" else None,
+                    "vad_provider": getattr(settings, "vad_provider", None),
+                    "retrieval_ranker": "lexical_token_overlap_v1",
+                    "quality_inspector": "ffprobe_loudness_static_flicker_v1",
+                },
+                "timings": {
+                    "stage_seconds": stage_timings,
+                    "total_processing_seconds": total_seconds,
+                },
+                "cost_estimate": {
+                    "stock_api_calls_made": len(retrieval_result.providers_queried),
+                    "procedural_fallbacks_invoked": retrieval_result.deduplication.procedural_fallbacks_invoked if retrieval_result.deduplication else 0,
+                    "note": "Third-party provider costs depend on each provider's plan; this engine performs no paid API calls beyond stock search/downloads.",
+                },
                 "speech_processing": {
                     "mode": "audio_url" if audio_url else "script_tts",
                     "duration_seconds": round(audio_duration, 3),

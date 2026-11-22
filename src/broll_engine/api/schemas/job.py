@@ -34,6 +34,7 @@ class JobCreateRequest(BaseModel):
     scenes: Optional[List[SceneHint]] = Field(default=None, description="Pre-segmented IncuBrix scene list with hints")
     voice: str = Field(default="en-IN-female", description="TTS voice identifier for text input")
     aspect_ratios: List[AspectRatio] = Field(default=[AspectRatio.RATIO_16_9], min_length=1, description="Target aspect ratios")
+    target_aspect_ratios: Optional[List[AspectRatio]] = Field(default=None, description="Alternative alias for aspect_ratios")
     style: Optional[str] = Field(default="bright, modern, real-world footage", description="Aesthetic style description")
     avoid: Optional[List[str]] = Field(default_factory=list, description="Negative visual concepts or content to avoid")
     captions: CaptionOptions = Field(default_factory=CaptionOptions, description="Caption generation preferences")
@@ -42,6 +43,10 @@ class JobCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_inputs(self) -> "JobCreateRequest":
+        if self.target_aspect_ratios and (self.aspect_ratios == [AspectRatio.RATIO_16_9] or not self.aspect_ratios):
+            self.aspect_ratios = self.target_aspect_ratios
+        if self.script is not None and not self.script.strip():
+            raise ValueError("script must contain non-whitespace text.")
         inputs = [bool(self.audio_url), bool(self.script), bool(self.scenes)]
         if sum(inputs) == 0:
             raise ValueError("At least one input must be provided: audio_url, script, or scenes.")
@@ -112,3 +117,72 @@ class ClipSwapResponse(BaseModel):
     processing_time_seconds: float = Field(..., description="Wall-clock time for partial re-render in seconds")
     outputs: JobOutputs = Field(..., description="Updated media download URLs")
     message: str = Field(default="Scene successfully replaced and video re-rendered")
+
+
+class TimelineClipModel(BaseModel):
+    """Individual editable clip instance placed on the timeline."""
+    id: str = Field(..., description="Unique clip instance identifier")
+    media_id: Optional[str] = Field(default=None, description="Original asset reference")
+    media_url: Optional[str] = Field(default=None, description="Source video, audio, or image URL")
+    local_path: Optional[str] = Field(default=None, description="Cached local path if available")
+    track_id: str = Field(default="V1", description="Track identifier: V1, V2, A1, A2, TXT")
+    start_time: float = Field(default=0.0, ge=0.0, description="Timeline start timestamp in seconds")
+    duration: float = Field(default=3.0, gt=0.0, description="Duration on the timeline in seconds")
+    source_in: float = Field(default=0.0, ge=0.0, description="Media in-point in seconds")
+    source_out: float = Field(default=3.0, gt=0.0, description="Media out-point in seconds")
+    speed: float = Field(default=1.0, gt=0.1, le=5.0, description="Playback speed multiplier")
+    volume: float = Field(default=1.0, ge=0.0, le=2.0, description="Audio volume multiplier")
+    scale: float = Field(default=1.0, gt=0.1, le=3.0, description="Visual scale zoom factor")
+    text: Optional[str] = Field(default=None, description="Caption or subtitle text content")
+    name: Optional[str] = Field(default=None, description="Display label in timeline")
+
+
+class TimelineTrackModel(BaseModel):
+    """Timeline track metadata."""
+    id: str = Field(..., description="Track identifier e.g. V1, V2, A1, A2, TXT")
+    name: str = Field(..., description="Display name for the track")
+    type: str = Field(..., description="video, audio, or caption")
+    muted: bool = Field(default=False)
+    locked: bool = Field(default=False)
+    visible: bool = Field(default=True)
+
+
+class TimelineProjectModel(BaseModel):
+    """Full persisted timeline project state."""
+    job_id: str = Field(..., description="Associated job ID")
+    aspect_ratio: str = Field(default="16:9", description="Current framing aspect ratio")
+    duration: float = Field(default=20.0, ge=0.0, description="Total project duration")
+    tracks: List[TimelineTrackModel] = Field(default_factory=list)
+    clips: List[TimelineClipModel] = Field(default_factory=list)
+
+
+class TimelineExportRequest(BaseModel):
+    """Payload for POST /api/v1/jobs/{job_id}/export-timeline."""
+    aspect_ratio: str = Field(default="16:9", description="Target aspect ratio: 16:9, 9:16, 1:1")
+    tracks: List[TimelineTrackModel] = Field(default_factory=list)
+    clips: List[TimelineClipModel] = Field(default_factory=list)
+    burn_in_captions: bool = Field(default=True, description="Whether to burn captions onto video")
+    caption_style: Optional[Dict[str, Any]] = Field(default=None, description="Custom styling for burned captions")
+
+
+class TimelineExportResponse(BaseModel):
+    """Response returned upon rendering the edited timeline composition."""
+    job_id: str
+    status: JobStatus = Field(default=JobStatus.SUCCEEDED)
+    aspect_ratio: str
+    video_url: str
+    duration_seconds: float
+    processing_time_seconds: float
+    message: str = Field(default="Timeline composition rendered and exported successfully")
+
+
+class MediaUploadResponse(BaseModel):
+    """Response returned when an asset is imported or uploaded."""
+    media_id: str
+    filename: str
+    media_type: str  # video, audio, image
+    duration_seconds: float = 0.0
+    width: Optional[int] = None
+    height: Optional[int] = None
+    url: str
+

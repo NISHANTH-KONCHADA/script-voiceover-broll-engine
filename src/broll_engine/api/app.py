@@ -3,7 +3,7 @@ from typing import AsyncGenerator, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from broll_engine.api.middleware import CorrelationIdMiddleware
+from broll_engine.api.middleware import CorrelationIdMiddleware, RateLimitMiddleware
 from broll_engine.api.routes.errors import register_error_handlers
 from broll_engine.api.routes.health import get_repository, get_storage, router as health_router
 from broll_engine.api.routes.jobs import get_job_service, router as jobs_router
@@ -79,13 +79,19 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Cross-Origin Resource Sharing
+    # Cross-Origin Resource Sharing (wildcard origins cannot carry credentials)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+    # Rate limiting for expensive job submissions (disabled when limit <= 0)
+    app.add_middleware(
+        RateLimitMiddleware,
+        max_per_minute=settings.api_rate_limit_per_minute,
     )
 
     # Correlation ID & structured logging middleware

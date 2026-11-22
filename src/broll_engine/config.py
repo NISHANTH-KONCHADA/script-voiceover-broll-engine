@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # External APIs (Optional/mockable)
     pexels_api_key: Optional[str] = Field(default=None, description="Pexels Video API Key")
     pixabay_api_key: Optional[str] = Field(default=None, description="Pixabay Video API Key")
+    storyblocks_public_key: Optional[str] = Field(default=None, description="Storyblocks Public Key")
+    storyblocks_private_key: Optional[str] = Field(default=None, description="Storyblocks Private Key")
+    storyblocks_enabled: bool = Field(default=False, description="Enable Storyblocks retrieval")
+    apisio_api_key: Optional[str] = Field(default=None, description="APIs.io API Key")
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API Key")
     gemini_api_key: Optional[str] = Field(default=None, description="Google Gemini API Key")
 
@@ -71,6 +75,20 @@ class Settings(BaseSettings):
     footage_cache_dir: str = Field(default="data/cache/footage", description="Local cache directory for B-roll footage")
     min_relevance_threshold: float = Field(default=0.45, description="Minimum normalized relevance score (0.0 - 1.0)")
     retrieval_provider_mode: str = Field(default="live", description="Provider mode: 'live' or 'mock'")
+
+    # Resilience & Security hard limits
+    job_execution_timeout_seconds: float = Field(
+        default=1200.0,
+        description="Hard watchdog deadline for a single job; exceeded jobs are marked FAILED (JOB_EXECUTION_TIMEOUT)",
+    )
+    media_download_total_timeout_seconds: float = Field(
+        default=90.0,
+        description="Total wall-clock deadline for a single footage download (prevents stalled-stream hangs)",
+    )
+    api_rate_limit_per_minute: int = Field(
+        default=30,
+        description="Max POST /api/v1/broll/jobs requests per client IP per minute (0 disables rate limiting)",
+    )
 
 
 # Global singleton instance

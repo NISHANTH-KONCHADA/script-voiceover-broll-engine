@@ -7,6 +7,13 @@ from httpx import ASGITransport, AsyncClient
 # Set test environment before imports
 os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+# Pin offline providers so tests never hit external APIs or download models
+# even when a developer's local .env configures live providers.
+os.environ["ASR_PROVIDER"] = "mock"
+os.environ["TTS_PROVIDER"] = "mock"
+os.environ["VAD_PROVIDER"] = "energy"
+os.environ["RETRIEVAL_PROVIDER_MODE"] = "mock"
+os.environ["API_RATE_LIMIT_PER_MINUTE"] = "0"
 
 from broll_engine.api.app import app, state
 from broll_engine.api.routes.health import get_repository, get_storage

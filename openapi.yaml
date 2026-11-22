@@ -172,6 +172,264 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/video:
+    get:
+      tags:
+      - B-roll Jobs
+      summary: Stream Rendered MP4 Video
+      description: Streams the rendered MP4 video directly from storage without SigV4
+        or CORS issues.
+      operationId: get_job_video_api_v1_jobs__job_id__video_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: aspect
+        in: query
+        required: false
+        schema:
+          type: string
+          default: '16:9'
+          title: Aspect
+      - name: clean
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Clean
+      - name: edited
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Edited
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/captions:
+    get:
+      tags:
+      - B-roll Jobs
+      summary: Download SRT Captions
+      description: Returns SRT subtitle file directly from storage.
+      operationId: get_job_captions_api_v1_jobs__job_id__captions_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/timeline:
+    get:
+      tags:
+      - B-roll Jobs
+      summary: Get Job Timeline JSON
+      description: Returns timeline metadata containing scenes, timestamps, and footage
+        information.
+      operationId: get_job_timeline_api_v1_jobs__job_id__timeline_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/media/upload:
+    post:
+      tags:
+      - B-roll Jobs
+      summary: Upload Media to Library
+      description: Imports video, audio, or image into the media library with probe
+        metadata.
+      operationId: upload_media_file_api_v1_media_upload_post
+      parameters:
+      - name: url
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Url
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_media_file_api_v1_media_upload_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaUploadResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/media/{media_id}:
+    get:
+      tags:
+      - B-roll Jobs
+      summary: Stream Uploaded Media Asset
+      description: Streams media file with HTTP Range support for seekable preview
+        in editor.
+      operationId: stream_media_file_api_v1_media__media_id__get
+      parameters:
+      - name: media_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Media Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/timeline-project:
+    get:
+      tags:
+      - B-roll Jobs
+      summary: Get Timeline Project State
+      description: Returns persisted multitrack timeline state, initializing from
+        job scenes if not yet saved.
+      operationId: get_timeline_project_api_v1_jobs__job_id__timeline_project_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineProjectModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - B-roll Jobs
+      summary: Save Timeline Project State
+      description: Persists updated multitrack timeline state, clip positions, trimming,
+        and custom captions.
+      operationId: save_timeline_project_api_v1_jobs__job_id__timeline_project_post
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimelineProjectModel'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineProjectModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/export-timeline:
+    post:
+      tags:
+      - B-roll Jobs
+      summary: Render & Export Edited Timeline
+      description: Renders the user's customized multitrack timeline using FFmpeg
+        into a broadcast MP4.
+      operationId: export_edited_timeline_api_v1_jobs__job_id__export_timeline_post
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimelineExportRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineExportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     AspectRatio:
@@ -181,6 +439,16 @@ components:
       - '9:16'
       - '1:1'
       title: AspectRatio
+    Body_upload_media_file_api_v1_media_upload_post:
+      properties:
+        file:
+          anyOf:
+          - type: string
+            contentMediaType: application/octet-stream
+          - type: 'null'
+          title: File
+      type: object
+      title: Body_upload_media_file_api_v1_media_upload_post
     CaptionOptions:
       properties:
         burn_in:
@@ -326,6 +594,14 @@ components:
           description: Target aspect ratios
           default:
           - '16:9'
+        target_aspect_ratios:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/AspectRatio'
+            type: array
+          - type: 'null'
+          title: Target Aspect Ratios
+          description: Alternative alias for aspect_ratios
         style:
           anyOf:
           - type: string
@@ -524,6 +800,42 @@ components:
       required:
       - timestamp
       title: LivenessResponse
+    MediaUploadResponse:
+      properties:
+        media_id:
+          type: string
+          title: Media Id
+        filename:
+          type: string
+          title: Filename
+        media_type:
+          type: string
+          title: Media Type
+        duration_seconds:
+          type: number
+          title: Duration Seconds
+          default: 0.0
+        width:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Width
+        height:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Height
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - media_id
+      - filename
+      - media_type
+      - url
+      title: MediaUploadResponse
+      description: Response returned when an asset is imported or uploaded.
     ReadinessResponse:
       properties:
         status:
@@ -562,6 +874,227 @@ components:
       required:
       - text
       title: SceneHint
+    TimelineClipModel:
+      properties:
+        id:
+          type: string
+          title: Id
+          description: Unique clip instance identifier
+        media_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Media Id
+          description: Original asset reference
+        media_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Media Url
+          description: Source video, audio, or image URL
+        local_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Local Path
+          description: Cached local path if available
+        track_id:
+          type: string
+          title: Track Id
+          description: 'Track identifier: V1, V2, A1, A2, TXT'
+          default: V1
+        start_time:
+          type: number
+          minimum: 0.0
+          title: Start Time
+          description: Timeline start timestamp in seconds
+          default: 0.0
+        duration:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Duration
+          description: Duration on the timeline in seconds
+          default: 3.0
+        source_in:
+          type: number
+          minimum: 0.0
+          title: Source In
+          description: Media in-point in seconds
+          default: 0.0
+        source_out:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Source Out
+          description: Media out-point in seconds
+          default: 3.0
+        speed:
+          type: number
+          maximum: 5.0
+          exclusiveMinimum: 0.1
+          title: Speed
+          description: Playback speed multiplier
+          default: 1.0
+        volume:
+          type: number
+          maximum: 2.0
+          minimum: 0.0
+          title: Volume
+          description: Audio volume multiplier
+          default: 1.0
+        scale:
+          type: number
+          maximum: 3.0
+          exclusiveMinimum: 0.1
+          title: Scale
+          description: Visual scale zoom factor
+          default: 1.0
+        text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text
+          description: Caption or subtitle text content
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+          description: Display label in timeline
+      type: object
+      required:
+      - id
+      title: TimelineClipModel
+      description: Individual editable clip instance placed on the timeline.
+    TimelineExportRequest:
+      properties:
+        aspect_ratio:
+          type: string
+          title: Aspect Ratio
+          description: 'Target aspect ratio: 16:9, 9:16, 1:1'
+          default: '16:9'
+        tracks:
+          items:
+            $ref: '#/components/schemas/TimelineTrackModel'
+          type: array
+          title: Tracks
+        clips:
+          items:
+            $ref: '#/components/schemas/TimelineClipModel'
+          type: array
+          title: Clips
+        burn_in_captions:
+          type: boolean
+          title: Burn In Captions
+          description: Whether to burn captions onto video
+          default: true
+        caption_style:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Caption Style
+          description: Custom styling for burned captions
+      type: object
+      title: TimelineExportRequest
+      description: Payload for POST /api/v1/jobs/{job_id}/export-timeline.
+    TimelineExportResponse:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+          default: succeeded
+        aspect_ratio:
+          type: string
+          title: Aspect Ratio
+        video_url:
+          type: string
+          title: Video Url
+        duration_seconds:
+          type: number
+          title: Duration Seconds
+        processing_time_seconds:
+          type: number
+          title: Processing Time Seconds
+        message:
+          type: string
+          title: Message
+          default: Timeline composition rendered and exported successfully
+      type: object
+      required:
+      - job_id
+      - aspect_ratio
+      - video_url
+      - duration_seconds
+      - processing_time_seconds
+      title: TimelineExportResponse
+      description: Response returned upon rendering the edited timeline composition.
+    TimelineProjectModel:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+          description: Associated job ID
+        aspect_ratio:
+          type: string
+          title: Aspect Ratio
+          description: Current framing aspect ratio
+          default: '16:9'
+        duration:
+          type: number
+          minimum: 0.0
+          title: Duration
+          description: Total project duration
+          default: 20.0
+        tracks:
+          items:
+            $ref: '#/components/schemas/TimelineTrackModel'
+          type: array
+          title: Tracks
+        clips:
+          items:
+            $ref: '#/components/schemas/TimelineClipModel'
+          type: array
+          title: Clips
+      type: object
+      required:
+      - job_id
+      title: TimelineProjectModel
+      description: Full persisted timeline project state.
+    TimelineTrackModel:
+      properties:
+        id:
+          type: string
+          title: Id
+          description: Track identifier e.g. V1, V2, A1, A2, TXT
+        name:
+          type: string
+          title: Name
+          description: Display name for the track
+        type:
+          type: string
+          title: Type
+          description: video, audio, or caption
+        muted:
+          type: boolean
+          title: Muted
+          default: false
+        locked:
+          type: boolean
+          title: Locked
+          default: false
+        visible:
+          type: boolean
+          title: Visible
+          default: true
+      type: object
+      required:
+      - id
+      - name
+      - type
+      title: TimelineTrackModel
+      description: Timeline track metadata.
     ValidationError:
       properties:
         loc:

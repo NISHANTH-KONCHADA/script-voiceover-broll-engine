@@ -217,6 +217,91 @@ MULTILINGUAL_CONCEPT_MAP: List[Tuple[Set[str], str, str]] = [
     ),
 ]
 
+# Sensitive-topic lexicon: tragic/violent/distressing news handled with respectful,
+# non-graphic visual metaphors instead of literal footage searches.
+SENSITIVE_TOPIC_KEYWORDS: Set[str] = {
+    "war", "wars", "killed", "killing", "murder", "murdered", "death", "deaths", "dead",
+    "shooting", "shot", "attack", "attacks", "terrorist", "terrorism", "bombing", "bomb",
+    "explosion", "massacre", "genocide", "suicide", "victims", "casualties", "tragedy",
+    "disaster", "earthquake", "flood", "famine", "crash", "accident", "abuse",
+    "assault", "rape", "kidnapping", "hostage", "execution", "torture", "protest",
+    "riot", "riots", "pandemic", "epidemic", "outbreak", "disease",
+}
+
+SENSITIVE_TOPIC_QUERY = "somber memorial candles and flowers respectful remembrance vigil"
+SENSITIVE_TOPIC_EXTRA_NEGATIVES = [
+    "graphic violence",
+    "gore",
+    "blood",
+    "explicit distress",
+    "real victims",
+]
+
+# Recognized commercial brands. When narration names a brand, the query is rewritten
+# to a generic category visual so no trademarked logos or lookalikes are fetched.
+KNOWN_BRAND_MAP: Dict[str, str] = {
+    "tesla": "electric car", "nike": "athletic running shoes", "adidas": "athletic shoes",
+    "coca-cola": "soft drink", "pepsi": "soft drink", "mcdonalds": "fast food restaurant",
+    "starbucks": "coffee shop", "google": "search engine office", "microsoft": "corporate software office",
+    "amazon": "e-commerce warehouse", "facebook": "social media office", "meta": "social media office",
+    "netflix": "streaming entertainment", "spotify": "music streaming", "uber": "ride hailing car",
+    "airbnb": "vacation rental apartment", "samsung": "consumer electronics", "sony": "consumer electronics",
+    "twitter": "social media feed", "x": "social media feed", "instagram": "social media feed",
+    "tiktok": "short video app", "youtube": "online video platform", "openai": "ai research lab",
+    "chatgpt": "ai chatbot interface", "iphone": "smartphone", "android": "smartphone",
+    "walmart": "retail supermarket", "ikea": "furniture store", "disney": "entertainment company",
+    "toyota": "automobile", "bmw": "automobile", "mercedes": "automobile", "ford": "automobile",
+    "bitcoin": "cryptocurrency concept", "ethereum": "cryptocurrency concept",
+}
+
+BRAND_EXTRA_NEGATIVES = [
+    "brand logos",
+    "trademarked logos",
+    "identifiable brand names",
+]
+
+# Capitalized-token heuristic for real named people (e.g. "Elon Musk announced...").
+# Two or more consecutive capitalized words not at sentence start are treated as a
+# named-person reference and replaced with a generic professional visual.
+_NAMED_PERSON_PATTERN = re.compile(r"(?<=[a-z,.;:!?()\-\s])([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)")
+
+# Common non-person capitalized entities that should not trigger the person guard.
+_NON_PERSON_ENTITIES: Set[str] = {
+    "silicon valley", "new york", "los angeles", "san francisco", "wall street",
+    "united states", "united kingdom", "european union", "middle east",
+    "south africa", "north america", "south america", "hong kong", "new delhi",
+    "latin america", "south korea", "north korea", "great britain",
+}
+
+NAMED_PERSON_QUERY = "professional business leader speaking at modern conference podium"
+NAMED_PERSON_EXTRA_NEGATIVES = [
+    "identifiable real person face",
+    "celebrity likeness",
+    "politician likeness",
+]
+
+# Numbers/statistics → abstract data-visualization metaphors
+_STATISTICS_PATTERN = re.compile(
+    r"(\d[\d,.]*\s?%|percent|million|billion|trillion|thousand|\$\s?\d|"
+    r"\d+\s*(x|times)\b|statistics|statistic|figures?|metrics?|data|survey|study|"
+    r"report(ed)?\s+(that|a)\b|increase[sd]?\s+by|decrease[sd]?\s+by|grew\s+by)",
+    re.IGNORECASE,
+)
+
+STATISTICS_QUERY = "business analytics dashboard with rising charts and data visualizations"
+STATISTICS_EXTRA_NEGATIVES = ["fabricated statistics overlays"]
+
+
+def _scene_mentions_named_person(scene_text: str) -> bool:
+    """Heuristic detection of named-person references in narration text."""
+    for match in _NAMED_PERSON_PATTERN.finditer(scene_text):
+        candidate = match.group(1).lower()
+        if candidate.startswith("the "):
+            continue
+        if candidate not in _NON_PERSON_ENTITIES:
+            return True
+    return False
+
 
 class ContextualQueryDisambiguator:
     """
@@ -298,7 +383,18 @@ class ContextualQueryDisambiguator:
                     query = f"{query}, {style_hint}"
                 return query, intent, negatives
 
-        # Step 5: Fallback to Natural Scene Subject Query Extraction
+        # Step 5: Content safety screening (named people, brands, sensitive news, statistics)
+        safety_query, safety_intent, safety_negatives = self._screen_content_safety(
+            scene_text=scene_text,
+            words_scene=words_scene,
+        )
+        if safety_query:
+            negatives.extend(n for n in safety_negatives if n not in negatives)
+            if style_hint:
+                safety_query = f"{safety_query}, {style_hint}"
+            return safety_query, safety_intent, negatives
+
+        # Step 6: Fallback to Natural Scene Subject Query Extraction
         # Extract meaningful nouns, verbs, and clean narrative elements
         cleaned_words = [w for w in scene_text.split() if len(w) > 3 and w.lower() not in {
             "this", "that", "these", "those", "with", "from", "into", "during", "before", "after",
@@ -310,3 +406,39 @@ class ContextualQueryDisambiguator:
             fallback_query = f"{fallback_query}, {style_hint}"
 
         return fallback_query, "concrete_action", negatives
+
+    def _screen_content_safety(
+        self,
+        scene_text: str,
+        words_scene: Set[str],
+    ) -> Tuple[Optional[str], Optional[str], List[str]]:
+        """Detects content requiring safe visual treatment.
+
+        Returns (query, intent, extra_negatives) or (None, None, []) when the
+        scene is unremarkable. Priority: sensitive topics > named people > brands
+        > statistics.
+        """
+        lowered = scene_text.lower()
+
+        # 1. Sensitive news/tragedy → respectful non-graphic metaphor
+        if words_scene.intersection(SENSITIVE_TOPIC_KEYWORDS):
+            return SENSITIVE_TOPIC_QUERY, "metaphor", list(SENSITIVE_TOPIC_EXTRA_NEGATIVES)
+
+        # 2. Named real people → generic professional visual (never faces of real people)
+        if _scene_mentions_named_person(scene_text):
+            return NAMED_PERSON_QUERY, "concrete_action", list(NAMED_PERSON_EXTRA_NEGATIVES)
+
+        # 3. Named brands → generic product/category visual
+        for brand, generic in KNOWN_BRAND_MAP.items():
+            if re.search(rf"\b{re.escape(brand)}\b", lowered):
+                return (
+                    f"generic {generic} product lifestyle context",
+                    "concrete_action",
+                    list(BRAND_EXTRA_NEGATIVES),
+                )
+
+        # 4. Statistics/numbers → data-visualization metaphor
+        if _STATISTICS_PATTERN.search(scene_text):
+            return STATISTICS_QUERY, "metaphor", list(STATISTICS_EXTRA_NEGATIVES)
+
+        return None, None, []
