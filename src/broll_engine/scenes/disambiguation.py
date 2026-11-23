@@ -21,12 +21,12 @@ HOMONYM_DISAMBIGUATION_MAP: Dict[str, List[Tuple[Set[str], str, str]]] = {
         (
             {"computing", "server", "servers", "data", "software", "aws", "azure", "storage",
              "infrastructure", "devops", "deploy", "api", "cluster", "digital", "network", "tech", "engine"},
-            "datacenter server racks glowing blue lights technology",
+            "datacenter server racks",
             "technology",
         ),
         (
             {"sky", "weather", "rain", "storm", "sun", "blue", "wind", "airplane", "horizon", "nature", "outdoor"},
-            "dramatic blue sky white puffy clouds time lapse",
+            "sky clouds timelapse",
             "environment",
         ),
     ],
@@ -34,84 +34,84 @@ HOMONYM_DISAMBIGUATION_MAP: Dict[str, List[Tuple[Set[str], str, str]]] = {
         (
             {"code", "programming", "script", "developer", "software", "language", "data", "engineer",
              "backend", "django", "fastapi", "machine", "algorithm", "computer"},
-            "software developer typing python code on screen modern office",
+            "developer typing code",
             "technology",
         ),
         (
             {"snake", "reptile", "jungle", "zoo", "wildlife", "animal", "forest", "tree", "species"},
-            "python snake in lush green tropical foliage wildlife",
+            "python snake foliage",
             "environment",
         ),
     ],
     "apple": [
         (
             {"iphone", "macbook", "ipad", "ios", "computer", "device", "silicon", "store", "tech", "laptop"},
-            "sleek modern smartphone and laptop on clean minimalist desk",
+            "smartphone laptop desk",
             "technology",
         ),
         (
             {"fruit", "orchard", "tree", "eat", "pie", "red", "green", "healthy", "food", "harvest"},
-            "fresh crisp red apples hanging on tree in orchard sunlight",
+            "red apples orchard",
             "environment",
         ),
     ],
     "bank": [
         (
             {"money", "finance", "loan", "investment", "account", "interest", "economy", "capital", "cash"},
-            "modern financial district glass skyscrapers banking commerce",
+            "financial district skyscrapers",
             "concrete_action",
         ),
         (
             {"river", "water", "stream", "shore", "mud", "grass", "fishing", "lake", "nature"},
-            "green grassy river bank flowing clear clean water nature",
+            "river bank water",
             "environment",
         ),
     ],
     "current": [
         (
             {"electric", "electrical", "voltage", "wire", "circuit", "amperage", "power", "grid", "energy"},
-            "electrical energy glowing blue circuit flow technology",
+            "electric circuit energy",
             "technology",
         ),
         (
             {"water", "ocean", "river", "sea", "stream", "tide", "swim", "waves", "flow"},
-            "powerful ocean water current clear turquoise waves moving",
+            "ocean waves current",
             "environment",
         ),
     ],
     "bug": [
         (
             {"software", "code", "debug", "error", "issue", "patch", "crash", "compiler", "fix", "testing"},
-            "software engineer inspecting code debugging on dual monitors",
+            "engineer debugging code",
             "technology",
         ),
         (
             {"insect", "leaf", "garden", "crawl", "plant", "nature", "beetle", "ant"},
-            "macro close up colorful insect crawling on green leaf nature",
+            "insect macro leaf",
             "environment",
         ),
     ],
     "pipeline": [
         (
             {"data", "software", "deploy", "build", "process", "workflow", "ci", "cd", "engineering", "automation"},
-            "digital data pipeline glowing visual information flow abstract",
+            "data pipeline digital",
             "technology",
         ),
         (
             {"oil", "gas", "water", "steel", "pipe", "construction", "industrial", "refinery"},
-            "industrial steel pipeline running through landscape infrastructure",
+            "industrial pipeline",
             "concrete_action",
         ),
     ],
     "scale": [
         (
             {"business", "growth", "users", "system", "infrastructure", "architecture", "scaling", "enterprise"},
-            "scalable cloud infrastructure network nodes expanding visually",
+            "cloud infrastructure network",
             "technology",
         ),
         (
             {"weight", "weigh", "balance", "fish", "measure", "justice", "law", "court"},
-            "vintage brass balance scale justice precision close up",
+            "balance scale justice",
             "metaphor",
         ),
     ],
@@ -121,42 +121,42 @@ HOMONYM_DISAMBIGUATION_MAP: Dict[str, List[Tuple[Set[str], str, str]]] = {
 ABSTRACT_CONCEPT_MAP: List[Tuple[Set[str], str, str]] = [
     (
         {"trust", "integrity", "reliability", "honesty", "credibility"},
-        "business partners firm handshake in bright modern conference room agreement",
+        "business handshake office",
         "metaphor",
     ),
     (
         {"growth", "increase", "scaling", "expand", "expansion", "profit", "revenue"},
-        "timelapse green plant sprout growing through soil or upward financial chart",
+        "business growth chart",
         "metaphor",
     ),
     (
         {"innovation", "innovative", "cutting-edge", "breakthrough", "invent", "invention"},
-        "modern laboratory scientist engineer working on futuristic technology prototype",
+        "technology laboratory engineer",
         "technology",
     ),
     (
         {"speed", "fast", "swift", "rapid", "velocity", "accelerate"},
-        "high speed train motion blur rushing through futuristic transit terminal",
+        "high speed train",
         "concrete_action",
     ),
     (
         {"security", "privacy", "protection", "safe", "secure", "cybersecurity", "encryption"},
-        "digital cyber security padlock shield glowing data protection animation",
+        "cyber security shield",
         "technology",
     ),
     (
         {"collaboration", "teamwork", "partner", "partnership", "cooperation", "together"},
-        "diverse creative team collaborating around whiteboard in modern office",
+        "team meeting office",
         "concrete_action",
     ),
     (
         {"future", "vision", "tomorrow", "next-generation"},
-        "sleek futuristic city skyline at dawn with autonomous transportation",
+        "futuristic city skyline",
         "metaphor",
     ),
     (
         {"global", "world", "worldwide", "international", "globe"},
-        "illuminated digital globe rotating with interconnected network lines",
+        "digital globe network",
         "technology",
     ),
 ]
@@ -166,53 +166,53 @@ MULTILINGUAL_CONCEPT_MAP: List[Tuple[Set[str], str, str]] = [
     # Hindi mappings
     (
         {"तकनीक", "प्रौद्योगिकी", "कंप्यूटर", "सॉफ्टवेयर"},
-        "modern computer technology digital innovation workspace",
+        "computer technology",
         "technology",
     ),
     (
         {"नवाचार", "आविष्कार", "रचनात्मक"},
-        "creative innovation ideas brainstorming modern tech lab",
+        "innovation brainstorming",
         "technology",
     ),
     (
         {"विकास", "प्रगति", "वृद्धि"},
-        "modern infrastructure development city skyline economic growth",
+        "city skyline development",
         "metaphor",
     ),
     (
         {"विश्वास", "ईमानदारी", "भरोसा"},
-        "professional business handshake in conference room agreement",
+        "business handshake",
         "metaphor",
     ),
     (
         {"सुरक्षा", "संरक्षण"},
-        "digital data security shield cyber technology",
+        "cyber security shield",
         "technology",
     ),
     # Tamil mappings
     (
         {"தொழில்நுட்பம்", "கணினி", "மென்பொருள்"},
-        "advanced modern technology digital innovation laboratory",
+        "technology laboratory",
         "technology",
     ),
     (
         {"வளர்ச்சி", "முன்னேற்றம்"},
-        "green plant sprout growing sunlight economic growth metaphor",
+        "business growth chart",
         "metaphor",
     ),
     (
         {"நம்பிக்கை", "நேர்மை"},
-        "business collaboration handshake professional agreement",
+        "business handshake",
         "metaphor",
     ),
     (
         {"பாதுகாப்பு"},
-        "digital cybersecurity shield network data protection",
+        "cybersecurity shield",
         "technology",
     ),
     (
         {"வெற்றி"},
-        "motivated creative professional achieving success modern office",
+        "professional success office",
         "concrete_action",
     ),
 ]
@@ -228,7 +228,7 @@ SENSITIVE_TOPIC_KEYWORDS: Set[str] = {
     "riot", "riots", "pandemic", "epidemic", "outbreak", "disease",
 }
 
-SENSITIVE_TOPIC_QUERY = "somber memorial candles and flowers respectful remembrance vigil"
+SENSITIVE_TOPIC_QUERY = "memorial candles vigil"
 SENSITIVE_TOPIC_EXTRA_NEGATIVES = [
     "graphic violence",
     "gore",
@@ -273,7 +273,7 @@ _NON_PERSON_ENTITIES: Set[str] = {
     "latin america", "south korea", "north korea", "great britain",
 }
 
-NAMED_PERSON_QUERY = "professional business leader speaking at modern conference podium"
+NAMED_PERSON_QUERY = "business leader conference"
 NAMED_PERSON_EXTRA_NEGATIVES = [
     "identifiable real person face",
     "celebrity likeness",
@@ -288,7 +288,7 @@ _STATISTICS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-STATISTICS_QUERY = "business analytics dashboard with rising charts and data visualizations"
+STATISTICS_QUERY = "analytics dashboard charts"
 STATISTICS_EXTRA_NEGATIVES = ["fabricated statistics overlays"]
 
 # Function words dropped when extracting search keywords from narration.
@@ -308,6 +308,25 @@ _QUERY_STOPWORDS: Set[str] = {
     "about", "how", "all", "any", "both", "each", "few", "other", "don", "doesn",
     "didn", "isn", "aren", "wasn", "weren", "won", "wouldn", "couldn", "shouldn",
 }
+
+
+def extract_keywords(text: str, max_terms: int = 5) -> str:
+    """Extracts content keywords from narration text for stock-footage search.
+
+    Providers AND-match query terms, so sentence fragments produce unusable
+    results; this keeps deduplicated non-stopword tokens only.
+    """
+    seen: Set[str] = set()
+    keywords: List[str] = []
+    for token in text.split():
+        w = token.strip(".,;:!?()\"'").lower()
+        if len(w) <= 2 or w in _QUERY_STOPWORDS or w in seen:
+            continue
+        seen.add(w)
+        keywords.append(w)
+        if len(keywords) >= max_terms:
+            break
+    return " ".join(keywords)
 
 
 def _scene_mentions_named_person(scene_text: str) -> bool:
@@ -381,12 +400,9 @@ class ContextualQueryDisambiguator:
             if term_set.intersection(words_scene) or term_set.intersection(words_context):
                 return visual_query, intent, negatives
 
-        # Step 4: Check for Abstract Concept Metaphors
-        for concept_set, visual_query, intent in ABSTRACT_CONCEPT_MAP:
-            if concept_set.intersection(words_scene):
-                return visual_query, intent, negatives
-
-        # Step 5: Content safety screening (named people, brands, sensitive news, statistics)
+        # Step 4: Content safety screening (named people, brands, sensitive news,
+        # statistics) — runs before abstract metaphors so e.g. "revenue grew
+        # forty percent" routes to the analytics visual, not a growth metaphor.
         safety_query, safety_intent, safety_negatives = self._screen_content_safety(
             scene_text=scene_text,
             words_scene=words_scene,
@@ -395,22 +411,13 @@ class ContextualQueryDisambiguator:
             negatives.extend(n for n in safety_negatives if n not in negatives)
             return safety_query, safety_intent, negatives
 
-        # Step 6: Fallback to Natural Scene Subject Query Extraction
-        # Keep only content keywords — providers AND-match query terms, so raw
-        # sentence fragments ("They fail when users don't") return unusable
-        # result sets and everything degrades to procedural fallback.
-        seen: Set[str] = set()
-        keywords: List[str] = []
-        for token in scene_text.split():
-            w = token.strip(".,;:!?()\"'").lower()
-            if len(w) <= 2 or w in _QUERY_STOPWORDS or w in seen:
-                continue
-            seen.add(w)
-            keywords.append(w)
-            if len(keywords) >= 5:
-                break
-        fallback_query = " ".join(keywords) if keywords else scene_text[:50].strip()
+        # Step 5: Check for Abstract Concept Metaphors
+        for concept_set, visual_query, intent in ABSTRACT_CONCEPT_MAP:
+            if concept_set.intersection(words_scene):
+                return visual_query, intent, negatives
 
+        # Step 6: Fallback to Natural Scene Subject Query Extraction
+        fallback_query = extract_keywords(scene_text) or scene_text[:50].strip()
         return fallback_query, "concrete_action", negatives
 
     def _screen_content_safety(
@@ -438,7 +445,7 @@ class ContextualQueryDisambiguator:
         for brand, generic in KNOWN_BRAND_MAP.items():
             if re.search(rf"\b{re.escape(brand)}\b", lowered):
                 return (
-                    f"generic {generic} product lifestyle context",
+                    generic,
                     "concrete_action",
                     list(BRAND_EXTRA_NEGATIVES),
                 )

@@ -24,6 +24,7 @@ from broll_engine.retrieval.pixabay import PixabayProvider
 from broll_engine.retrieval.storyblocks import StoryblocksFootageProvider
 from broll_engine.retrieval.procedural import ProceduralFallbackProvider
 from broll_engine.retrieval.ranker import SemanticRelevanceRanker
+from broll_engine.scenes.disambiguation import extract_keywords
 
 logger = get_logger(__name__)
 
@@ -74,7 +75,7 @@ class FootageRetrievalEngine:
         self,
         query: str,
         aspect_ratio: str,
-        per_page: int = 8,
+        per_page: int = 15,
     ) -> List[CandidateAsset]:
         """Queries external providers with automatic failover across Pexels and Pixabay."""
         candidates: List[CandidateAsset] = []
@@ -120,10 +121,27 @@ class FootageRetrievalEngine:
     ) -> SelectedClip:
         """Retrieves, deduplicates, and validates a B-roll video clip for a single scene."""
         query = scene.visual_query or scene.narration_text
-        candidates = await self._query_providers_with_failover(
-            query=query,
-            aspect_ratio=aspect_ratio,
-        )
+
+        # Multi-variant retrieval: query the disambiguated visual query plus a
+        # keyword variant distilled from the narration when they differ, then
+        # merge unique candidates — a single phrasing often misses what a
+        # synonym or shorter keyword set catches.
+        queries = [query]
+        if scene.narration_text:
+            alt = extract_keywords(scene.narration_text)
+            if alt and alt != query:
+                queries.append(alt)
+
+        candidates: List[CandidateAsset] = []
+        seen_ids: Set[str] = set()
+        for q in queries:
+            for c in await self._query_providers_with_failover(
+                query=q,
+                aspect_ratio=aspect_ratio,
+            ):
+                if c.asset_id not in seen_ids:
+                    seen_ids.add(c.asset_id)
+                    candidates.append(c)
 
         ranked_candidates: List[RankedAsset] = []
         if candidates:

@@ -125,7 +125,7 @@ class SubtitleGenerator:
         font_size: Optional[int] = None,
         primary_color: str = "&H00FFFFFF",  # White
         outline_color: str = "&H00000000",  # Black
-        outline_width: int = 1,
+        outline_width: int = 2,
         margin_v: Optional[int] = None,
         include_kinetic_titles: bool = True,
         all_caps_subtitles: bool = False,
@@ -136,22 +136,22 @@ class SubtitleGenerator:
         aspect_norm = str(aspect_ratio).replace("x", ":")
         if aspect_norm == "9:16":
             play_res_x, play_res_y = 1080, 1920
-            title_margin_v = 150  # Mobile top status bar safe zone
-            sub_margin_v = margin_v if margin_v is not None else 160  # Mobile bottom UI safe zone
-            title_fs = 34
-            sub_fs = font_size if font_size is not None else 26
+            title_margin_v = 160  # Mobile top status bar safe zone
+            sub_margin_v = margin_v if margin_v is not None else 210  # Mobile bottom UI safe zone
+            title_fs = 44
+            sub_fs = font_size if font_size is not None else 36
         elif aspect_norm == "1:1":
             play_res_x, play_res_y = 1080, 1080
-            title_margin_v = 65
-            sub_margin_v = margin_v if margin_v is not None else 60
-            title_fs = 34
-            sub_fs = font_size if font_size is not None else 26
+            title_margin_v = 70
+            sub_margin_v = margin_v if margin_v is not None else 95
+            title_fs = 42
+            sub_fs = font_size if font_size is not None else 36
         else:  # 16:9 landscape default
             play_res_x, play_res_y = 1920, 1080
-            title_margin_v = 55
-            sub_margin_v = margin_v if margin_v is not None else 45
-            title_fs = 38
-            sub_fs = font_size if font_size is not None else 28
+            title_margin_v = 60
+            sub_margin_v = margin_v if margin_v is not None else 85
+            title_fs = 46
+            sub_fs = font_size if font_size is not None else 42
 
         header = f"""[Script Info]
 Title: IncuBrix HyperFrames Captions
