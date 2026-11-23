@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 from typing import Dict, List, Optional
@@ -70,39 +71,60 @@ class EdgeTTSProvider(TTSProvider):
             output_path = tmp.name
             tmp.close()
 
-        communicate = edge_tts.Communicate(clean_text, resolved_voice)
-
         words: List[WordTiming] = []
         sentence_boundaries: List[dict] = []
         audio_chunks: List[bytes] = []
 
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_chunks.append(chunk["data"])
-            elif chunk["type"] == "WordBoundary":
-                # offset and duration in 100ns ticks
-                offset_sec = chunk["offset"] / 10_000_000.0
-                duration_sec = chunk["duration"] / 10_000_000.0
-                word_text = chunk["text"].strip()
-                if word_text:
-                    words.append(
-                        WordTiming(
-                            word=word_text,
-                            start=round(offset_sec, 3),
-                            end=round(offset_sec + duration_sec, 3),
-                            probability=1.0,
-                        )
-                    )
-            elif chunk["type"] == "SentenceBoundary":
-                offset_sec = chunk["offset"] / 10_000_000.0
-                duration_sec = chunk["duration"] / 10_000_000.0
-                sent_text = chunk["text"].strip()
-                if sent_text:
-                    sentence_boundaries.append({
-                        "offset": offset_sec,
-                        "duration": duration_sec,
-                        "text": sent_text,
-                    })
+        # edge-tts intermittently returns NoAudioReceived on transient service or
+        # network errors — observed ~per-connection, so retry with jittered
+        # backoff before failing the job.
+        import random
+        last_error: Optional[Exception] = None
+        for attempt in range(5):
+            try:
+                if attempt:
+                    words.clear()
+                    sentence_boundaries.clear()
+                    audio_chunks.clear()
+                    await asyncio.sleep(min(2 ** attempt, 8) + random.uniform(0, 1.5))
+                communicate = edge_tts.Communicate(clean_text, resolved_voice)
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_chunks.append(chunk["data"])
+                    elif chunk["type"] == "WordBoundary":
+                        # offset and duration in 100ns ticks
+                        offset_sec = chunk["offset"] / 10_000_000.0
+                        duration_sec = chunk["duration"] / 10_000_000.0
+                        word_text = chunk["text"].strip()
+                        if word_text:
+                            words.append(
+                                WordTiming(
+                                    word=word_text,
+                                    start=round(offset_sec, 3),
+                                    end=round(offset_sec + duration_sec, 3),
+                                    probability=1.0,
+                                )
+                            )
+                    elif chunk["type"] == "SentenceBoundary":
+                        offset_sec = chunk["offset"] / 10_000_000.0
+                        duration_sec = chunk["duration"] / 10_000_000.0
+                        sent_text = chunk["text"].strip()
+                        if sent_text:
+                            sentence_boundaries.append({
+                                "offset": offset_sec,
+                                "duration": duration_sec,
+                                "text": sent_text,
+                            })
+                if audio_chunks:
+                    break
+                last_error = RuntimeError("edge-tts stream ended without audio data")
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    f"edge-tts attempt {attempt + 1}/5 failed for voice '{resolved_voice}': {e}"
+                )
+        else:
+            raise last_error or RuntimeError("edge-tts synthesis failed")
 
         full_audio_bytes = b"".join(audio_chunks)
         with open(output_path, "wb") as f:

@@ -27,6 +27,7 @@ class MockASRProvider(ASRProvider):
         self,
         audio_path: str,
         language: Optional[str] = None,
+        task: str = "transcribe",
     ) -> TranscriptionResult:
         # Preflight validation first
         metadata = self.preflight.validate_file(audio_path)

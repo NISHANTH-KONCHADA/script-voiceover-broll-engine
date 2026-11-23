@@ -39,7 +39,9 @@ class FasterWhisperASRProvider(ASRProvider):
             )
         return self._model
 
-    def _transcribe_sync(self, audio_path: str, language: Optional[str]) -> TranscriptionResult:
+    def _transcribe_sync(
+        self, audio_path: str, language: Optional[str], task: str
+    ) -> TranscriptionResult:
         model = self._get_model()
 
         # Normalize language codes (e.g., 'en-IN' -> 'en', 'hi-IN' -> 'hi', 'ta-IN' -> 'ta')
@@ -48,6 +50,7 @@ class FasterWhisperASRProvider(ASRProvider):
         segments_gen, info = model.transcribe(
             audio_path,
             language=lang_code,
+            task=task,
             word_timestamps=True,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=400),
@@ -92,5 +95,10 @@ class FasterWhisperASRProvider(ASRProvider):
             segments=segments_list,
         )
 
-    async def transcribe(self, audio_path: str, language: Optional[str] = None) -> TranscriptionResult:
-        return await asyncio.to_thread(self._transcribe_sync, audio_path, language)
+    async def transcribe(
+        self,
+        audio_path: str,
+        language: Optional[str] = None,
+        task: str = "transcribe",
+    ) -> TranscriptionResult:
+        return await asyncio.to_thread(self._transcribe_sync, audio_path, language, task)

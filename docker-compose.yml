@@ -25,6 +25,7 @@ services:
       - ./src:/app/src
       - ./tmp:/app/tmp
       - ./outputs:/app/outputs
+      - hf_cache:/root/.cache/huggingface
     depends_on:
       minio-init:
         condition: service_completed_successfully
@@ -83,3 +84,4 @@ services:
 volumes:
   app_data:
   minio_data:
+  hf_cache:

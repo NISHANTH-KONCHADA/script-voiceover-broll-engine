@@ -74,6 +74,10 @@ class ASRProvider(ABC):
         self,
         audio_path: str,
         language: Optional[str] = None,
+        task: str = "transcribe",
     ) -> TranscriptionResult:
-        """Transcribes audio file to text with word-level timing alignments."""
+        """Transcribes audio file to text with word-level timing alignments.
+
+        task: 'transcribe' (same-language) or 'translate' (to English).
+        """
         pass

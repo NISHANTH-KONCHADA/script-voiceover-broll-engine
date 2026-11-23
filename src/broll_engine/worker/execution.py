@@ -212,11 +212,36 @@ class JobExecutionWorker:
 
                 tts_result: TTSResult = await self.tts_provider.synthesize(text=script, voice=voice)
                 temp_files_to_cleanup.append(tts_result.audio_path)
+                local_audio_path = tts_result.audio_path
                 narration_text = script
                 detected_language = tts_result.metadata.language
                 audio_duration = tts_result.metadata.duration_seconds
                 words_data = [w.to_dict() for w in tts_result.words]
                 master_audio_bytes = tts_result.audio_bytes
+
+            # Non-English narration: run an English translation pass for scene
+            # segmentation and footage retrieval. Stock providers index English
+            # metadata, so native-script queries return nothing; English scene
+            # text also guarantees renderable caption glyphs. The audio itself
+            # stays in the original language.
+            if detected_language and detected_language.split("-")[0].lower() != "en":
+                try:
+                    tr = await self.asr_provider.transcribe(
+                        local_audio_path, language=detected_language, task="translate"
+                    )
+                    if tr.text.strip():
+                        narration_text = tr.text
+                        words_data = [w.to_dict() for w in tr.words]
+                        audio_duration = audio_duration or tr.duration
+                        logger.info(
+                            f"Job {job_id}: translated {detected_language} narration "
+                            "to English for retrieval and captions"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Job {job_id}: English translation pass failed ({e}); "
+                        "retrieval will use the original-language text"
+                    )
 
             # Step 3: Semantic Scene Segmentation & Contextual Query Disambiguation (Phase 3)
             _mark("ingestion_and_speech")
