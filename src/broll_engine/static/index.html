@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B-roll Video Engine — IncuBrix PS3</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #171a21; --border: #262b36;
+    --text: #e8eaed; --muted: #9aa0ab; --accent: #4f8cff;
+    --ok: #34c78e; --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; display: flex; justify-content: center;
+    padding: 40px 16px;
+  }
+  .card { width: 100%; max-width: 600px; }
+  h1 { font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 4px 0 24px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 18px 0 6px; }
+  textarea, input[type=url], select {
+    width: 100%; background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; font: inherit; resize: vertical;
+  }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  textarea { min-height: 110px; }
+  .ratios { display: flex; gap: 8px; }
+  .ratios label {
+    flex: 1; text-align: center; cursor: pointer; margin: 0;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 0;
+    color: var(--muted); font-size: 13px; user-select: none;
+  }
+  .ratios input { display: none; }
+  .ratios input:checked + span { color: var(--text); }
+  .ratios label:has(input:checked) { border-color: var(--accent); background: rgba(79,140,255,.1); color: var(--text); }
+  button {
+    width: 100%; margin-top: 22px; padding: 13px;
+    background: var(--accent); color: #fff; border: 0; border-radius: 10px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: wait; }
+  details { margin-top: 14px; font-size: 13px; color: var(--muted); }
+  details input, details select { margin-top: 8px; }
+  #status { margin-top: 24px; display: none; }
+  .bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  .stage { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .error { color: var(--err); font-size: 13px; margin-top: 8px; }
+  #result { margin-top: 24px; display: none; }
+  video { width: 100%; border-radius: 10px; border: 1px solid var(--border); background: #000; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .links a {
+    font-size: 13px; color: var(--accent); text-decoration: none;
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px;
+  }
+  .links a:hover { border-color: var(--accent); }
+  footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Script → B-roll Video Engine</h1>
+  <p class="sub">IncuBrix Assessment 3 · PS3 — paste a script (or link a voiceover), get a licence-clean narrated video.</p>
+
+  <label for="script">Script</label>
+  <textarea id="script" placeholder="e.g. Revenue grew forty percent this quarter. Our cloud platform now scales to millions of users across the globe."></textarea>
+
+  <details>
+    <summary>Use a voiceover audio URL instead</summary>
+    <input type="url" id="audio_url" placeholder="https://…/narration.mp3">
+  </details>
+
+  <label>Aspect ratio</label>
+  <div class="ratios">
+    <label><input type="checkbox" name="ar" value="16:9" checked><span>16:9</span></label>
+    <label><input type="checkbox" name="ar" value="9:16"><span>9:16</span></label>
+    <label><input type="checkbox" name="ar" value="1:1"><span>1:1</span></label>
+  </div>
+
+  <details>
+    <summary>Voice</summary>
+    <select id="voice">
+      <option value="en-IN-female" selected>English (India) — female</option>
+      <option value="en-IN-male">English (India) — male</option>
+      <option value="en-US-female">English (US) — female</option>
+      <option value="en-US-male">English (US) — male</option>
+      <option value="hi-IN-female">Hindi — female</option>
+      <option value="ta-IN-female">Tamil — female</option>
+    </select>
+  </details>
+
+  <button id="go">Generate video</button>
+
+  <div id="status">
+    <div class="bar"><div id="bar"></div></div>
+    <div class="stage" id="stage"></div>
+    <div class="error" id="error"></div>
+  </div>
+
+  <div id="result">
+    <video id="player" controls playsinline></video>
+    <div class="links" id="links"></div>
+  </div>
+
+  <footer>
+    API docs: <a href="/docs">/docs</a> · health: <a href="/health">/health</a> ·
+    demo limit: 30 jobs/min/IP · each clip's licence &amp; source is recorded in timeline.json
+  </footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const pollMs = 2000;
+
+$("go").addEventListener("click", async () => {
+  $("error").textContent = ""; $("result").style.display = "none";
+  const script = $("script").value.trim();
+  const audioUrl = $("audio_url").value.trim();
+  const ratios = [...document.querySelectorAll("input[name=ar]:checked")].map(i => i.value);
+
+  if (!script && !audioUrl) { $("status").style.display = "block"; $("error").textContent = "Paste a script or provide an audio URL."; return; }
+  if (!ratios.length) { $("status").style.display = "block"; $("error").textContent = "Pick at least one aspect ratio."; return; }
+
+  const body = { aspect_ratios: ratios, voice: $("voice").value };
+  if (audioUrl) body.audio_url = audioUrl; else body.script = script;
+
+  $("go").disabled = true; $("status").style.display = "block";
+  setBar(2, "Submitting…");
+  try {
+    const res = await fetch("/api/v1/broll/jobs", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || data?.detail || `HTTP ${res.status}`);
+    poll(data.job_id);
+  } catch (e) {
+    $("error").textContent = e.message; $("go").disabled = false; setBar(0, "");
+  }
+});
+
+async function poll(jobId) {
+  try {
+    const res = await fetch(`/api/v1/jobs/${jobId}`);
+    const job = await res.json();
+    if (!res.ok) throw new Error(job?.error?.message || `HTTP ${res.status}`);
+    setBar(job.progress || 0, `${job.status} — ${job.stage || ""} (${job.progress || 0}%)`);
+    if (job.status === "succeeded") return done(job);
+    if (job.status === "failed") throw new Error(job.error?.message || "Job failed");
+    setTimeout(() => poll(jobId), pollMs);
+  } catch (e) {
+    $("error").textContent = e.message; $("go").disabled = false;
+  }
+}
+
+function done(job) {
+  setBar(100, "Done.");
+  $("go").disabled = false;
+  const o = job.outputs || {};
+  const vids = o.videos || {};
+  const first = Object.values(vids)[0];
+  if (first) { $("player").src = first; $("result").style.display = "block"; }
+  const labels = {};
+  Object.entries(vids).forEach(([r, u]) => labels[`Video ${r}`] = u);
+  if (o.captions) labels["Captions (SRT)"] = o.captions;
+  if (o.timeline) labels["timeline.json"] = o.timeline;
+  if (o.manifest) labels["manifest.json"] = o.manifest;
+  if (o.quality_report) labels["quality_report.json"] = o.quality_report;
+  if (o.transcript) labels["transcript.json"] = o.transcript;
+  $("links").innerHTML = Object.entries(labels)
+    .map(([t, u]) => `<a href="${u}" target="_blank">${t}</a>`).join("");
+}
+
+function setBar(pct, txt) {
+  $("bar").style.width = pct + "%"; $("stage").textContent = txt;
+}
+</script>
+</body>
+</html>

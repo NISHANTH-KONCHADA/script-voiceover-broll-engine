@@ -2,7 +2,8 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse
+from pathlib import Path
 
 from broll_engine.api.middleware import CorrelationIdMiddleware, RateLimitMiddleware
 from broll_engine.api.routes.errors import register_error_handlers
@@ -101,10 +102,12 @@ def create_app() -> FastAPI:
     # Structured error handlers
     register_error_handlers(app)
 
-    # Root path redirects to the Swagger UI (the API has no homepage)
+    # Minimal reviewer-facing demo UI at the root; Swagger UI stays at /docs
+    _static_index = Path(__file__).resolve().parent.parent / "static" / "index.html"
+
     @app.get("/", include_in_schema=False)
-    async def root() -> RedirectResponse:
-        return RedirectResponse(url="/docs")
+    async def root() -> FileResponse:
+        return FileResponse(_static_index)
 
     # Include routers
     app.include_router(health_router)
