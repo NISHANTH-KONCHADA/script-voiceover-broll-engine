@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime, timezone
@@ -138,9 +139,31 @@ class JobExecutionWorker:
             )
 
             audio_url = request_payload.get("audio_url")
+            audio_media_id = request_payload.get("audio_media_id")
             script = request_payload.get("script")
             scenes_list = request_payload.get("scenes")
             voice = request_payload.get("voice", "en-IN-female")
+
+            # Resolve an uploaded media library asset (audio_media_id) to its
+            # local cache file. The id is strictly validated to prevent traversal.
+            if audio_media_id and not audio_url:
+                if not re.fullmatch(r"media_[A-Za-z0-9_-]+", audio_media_id):
+                    raise APIError(
+                        code="INVALID_MEDIA_ID",
+                        message=f"Invalid audio_media_id '{audio_media_id}'.",
+                        status_code=400,
+                        retryable=False,
+                    )
+                media_dir = Path(settings.footage_cache_dir).resolve()
+                matches = sorted(media_dir.glob(f"{audio_media_id}_*"))
+                if not matches:
+                    raise APIError(
+                        code="AUDIO_MEDIA_NOT_FOUND",
+                        message=f"No uploaded media found for audio_media_id '{audio_media_id}'.",
+                        status_code=404,
+                        retryable=False,
+                    )
+                audio_url = str(matches[0])
 
             words_data = []
             narration_text = ""

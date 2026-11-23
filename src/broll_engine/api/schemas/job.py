@@ -30,6 +30,7 @@ class SceneHint(BaseModel):
 class JobCreateRequest(BaseModel):
     """Payload for POST /api/v1/broll/jobs."""
     audio_url: Optional[str] = Field(default=None, description="Direct URL to pre-recorded audio file (mp3, wav, m4a)")
+    audio_media_id: Optional[str] = Field(default=None, description="ID of an audio file previously uploaded via POST /api/v1/media/upload")
     script: Optional[str] = Field(default=None, description="Plain text script for narration synthesis", min_length=1)
     scenes: Optional[List[SceneHint]] = Field(default=None, description="Pre-segmented IncuBrix scene list with hints")
     voice: str = Field(default="en-IN-female", description="TTS voice identifier for text input")
@@ -47,9 +48,9 @@ class JobCreateRequest(BaseModel):
             self.aspect_ratios = self.target_aspect_ratios
         if self.script is not None and not self.script.strip():
             raise ValueError("script must contain non-whitespace text.")
-        inputs = [bool(self.audio_url), bool(self.script), bool(self.scenes)]
+        inputs = [bool(self.audio_url), bool(self.audio_media_id), bool(self.script), bool(self.scenes)]
         if sum(inputs) == 0:
-            raise ValueError("At least one input must be provided: audio_url, script, or scenes.")
+            raise ValueError("At least one input must be provided: audio_url, audio_media_id, script, or scenes.")
         return self
 
 

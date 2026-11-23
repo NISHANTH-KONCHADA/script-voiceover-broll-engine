@@ -273,6 +273,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/artifact/{filename}:
+    get:
+      tags:
+      - B-roll Jobs
+      summary: Download Job Artifact
+      description: Streams a job artifact (manifest.json, transcript.json, scenes.json,
+        quality_report.json, master_audio.mp3, etc.) directly from storage.
+      operationId: get_job_artifact_api_v1_jobs__job_id__artifact__filename__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: filename
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Filename
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/media/upload:
     post:
       tags:
@@ -565,6 +598,12 @@ components:
           - type: 'null'
           title: Audio Url
           description: Direct URL to pre-recorded audio file (mp3, wav, m4a)
+        audio_media_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Audio Media Id
+          description: ID of an audio file previously uploaded via POST /api/v1/media/upload
         script:
           anyOf:
           - type: string

@@ -71,7 +71,9 @@
   <textarea id="script" placeholder="e.g. Revenue grew forty percent this quarter. Our cloud platform now scales to millions of users across the globe."></textarea>
 
   <details>
-    <summary>Use a voiceover audio URL instead</summary>
+    <summary>Use a voiceover recording instead</summary>
+    <input type="file" id="audio_file" accept="audio/*,.mp3,.wav,.m4a" style="margin-top:8px">
+    <div style="font-size:12px;margin-top:4px">or paste an audio URL:</div>
     <input type="url" id="audio_url" placeholder="https://…/narration.mp3">
   </details>
 
@@ -121,17 +123,32 @@ $("go").addEventListener("click", async () => {
   $("error").textContent = ""; $("result").style.display = "none";
   const script = $("script").value.trim();
   const audioUrl = $("audio_url").value.trim();
+  const audioFile = $("audio_file").files[0];
   const ratios = [...document.querySelectorAll("input[name=ar]:checked")].map(i => i.value);
 
-  if (!script && !audioUrl) { $("status").style.display = "block"; $("error").textContent = "Paste a script or provide an audio URL."; return; }
+  if (!script && !audioUrl && !audioFile) { $("status").style.display = "block"; $("error").textContent = "Paste a script, upload a voiceover file, or provide an audio URL."; return; }
   if (!ratios.length) { $("status").style.display = "block"; $("error").textContent = "Pick at least one aspect ratio."; return; }
 
   const body = { aspect_ratios: ratios, voice: $("voice").value };
-  if (audioUrl) body.audio_url = audioUrl; else body.script = script;
+  if (script) body.script = script;
+  if (audioUrl) body.audio_url = audioUrl;
 
   $("go").disabled = true; $("status").style.display = "block";
   setBar(2, "Submitting…");
   try {
+    if (audioFile) {
+      setBar(2, "Uploading voiceover…");
+      const fd = new FormData();
+      fd.append("file", audioFile);
+      const up = await fetch("/api/v1/media/upload", { method: "POST", body: fd });
+      const upData = await up.json();
+      if (!up.ok) throw new Error(upData?.error?.message || `Upload failed (HTTP ${up.status})`);
+      body.audio_media_id = upData.media_id;
+      if (script) delete body.script;
+    }
+    if (!body.script && !body.audio_url && !body.audio_media_id) throw new Error("No input provided.");
+
+    setBar(4, "Submitting job…");
     const res = await fetch("/api/v1/broll/jobs", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

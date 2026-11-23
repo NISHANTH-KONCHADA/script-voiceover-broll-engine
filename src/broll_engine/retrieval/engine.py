@@ -27,6 +27,12 @@ from broll_engine.retrieval.ranker import SemanticRelevanceRanker
 
 logger = get_logger(__name__)
 
+# Disclosure floor for the relax-and-disclose path: when providers return
+# candidates but nothing reaches min_relevance_threshold, the best candidate
+# at or above this floor is used and flagged fallback_status="low_relevance"
+# in timeline.json rather than silently degrading to procedural footage.
+LOW_RELEVANCE_FLOOR = 0.15
+
 
 class FootageRetrievalEngine:
     """Orchestrates multi-source footage search, semantic ranking, deduplication,
@@ -136,6 +142,29 @@ class FootageRetrievalEngine:
             min_threshold=self.ranker.min_threshold,
         )
 
+        # Relax-and-disclose: if providers returned candidates but none reached
+        # the minimum threshold, accept the best at a disclosure floor instead
+        # of silently degrading the entire video to procedural clips. The actual
+        # score and "low_relevance" fallback_status are recorded in timeline.json.
+        low_relevance = False
+        if not best_ranked and ranked_candidates:
+            relaxed = self.deduplicator.filter_and_select_best(
+                ranked_candidates=ranked_candidates,
+                min_threshold=LOW_RELEVANCE_FLOOR,
+            )
+            if relaxed:
+                best_ranked = relaxed
+                low_relevance = True
+                logger.warning(
+                    "Scene %d ('%s'): accepting stock candidate '%s' at score %.2f "
+                    "below min threshold %.2f (disclosed as low_relevance)",
+                    scene.index,
+                    scene.id,
+                    relaxed.candidate.asset_id,
+                    relaxed.relevance_score,
+                    self.ranker.min_threshold,
+                )
+
         # If a valid stock candidate was chosen, attempt to download and validate media
         if best_ranked:
             cand = best_ranked.candidate
@@ -150,7 +179,11 @@ class FootageRetrievalEngine:
                     asset_id=cand.asset_id,
                     provider=cand.provider,
                     relevance_score=best_ranked.relevance_score,
-                    selection_reason=best_ranked.selection_reason,
+                    selection_reason=(
+                        f"{best_ranked.selection_reason} [below min threshold — low_relevance]"
+                        if low_relevance
+                        else best_ranked.selection_reason
+                    ),
                     license=cand.license,
                     creator=cand.creator_name,
                     creator_url=cand.creator_url,
@@ -158,7 +191,7 @@ class FootageRetrievalEngine:
                     download_url=cand.download_url,
                     local_path=local_path,
                     download_status="downloaded",
-                    fallback_status="none",
+                    fallback_status="low_relevance" if low_relevance else "none",
                     width=meta.get("width", cand.width),
                     height=meta.get("height", cand.height),
                     duration_seconds=meta.get("duration", cand.duration_seconds),

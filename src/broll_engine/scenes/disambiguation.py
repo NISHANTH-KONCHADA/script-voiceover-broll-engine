@@ -291,6 +291,24 @@ _STATISTICS_PATTERN = re.compile(
 STATISTICS_QUERY = "business analytics dashboard with rising charts and data visualizations"
 STATISTICS_EXTRA_NEGATIVES = ["fabricated statistics overlays"]
 
+# Function words dropped when extracting search keywords from narration.
+# Stock providers AND-match query terms, so sentence fragments and style
+# filler ("in realistic setting", "bright modern footage") degrade results.
+_QUERY_STOPWORDS: Set[str] = {
+    "a", "an", "the", "and", "or", "but", "if", "then", "else", "when", "while",
+    "at", "by", "for", "to", "of", "in", "on", "with", "from", "into", "onto",
+    "over", "under", "again", "further", "once", "this", "that", "these", "those",
+    "there", "here", "where", "which", "who", "whom", "whose", "what", "is", "are",
+    "was", "were", "be", "been", "being", "am", "do", "does", "did", "doing",
+    "done", "have", "has", "had", "having", "can", "could", "shall", "should",
+    "will", "would", "may", "might", "must", "not", "no", "nor", "so", "than",
+    "too", "very", "just", "only", "also", "more", "most", "some", "such", "own",
+    "same", "it", "its", "they", "them", "their", "he", "she", "his", "her",
+    "we", "our", "us", "you", "your", "i", "me", "my", "as", "up", "out", "off",
+    "about", "how", "all", "any", "both", "each", "few", "other", "don", "doesn",
+    "didn", "isn", "aren", "wasn", "weren", "won", "wouldn", "couldn", "shouldn",
+}
+
 
 def _scene_mentions_named_person(scene_text: str) -> bool:
     """Heuristic detection of named-person references in narration text."""
@@ -335,13 +353,7 @@ class ContextualQueryDisambiguator:
 
         # Step 1: If an explicit director visual hint was provided in the request, prioritize it
         if visual_hint and visual_hint.strip():
-            hint_clean = visual_hint.strip()
-            # Still append style if specified
-            if style_hint and "real-world" not in hint_clean:
-                query = f"{hint_clean}, {style_hint}"
-            else:
-                query = hint_clean
-            return query, "concrete_action", negatives
+            return visual_hint.strip(), "concrete_action", negatives
 
         # Tokenize context for keyword matching with simple singularization support
         words_scene_raw = set(re.findall(r"\w+", scene_text.lower()))
@@ -362,26 +374,17 @@ class ContextualQueryDisambiguator:
                         best_match = (visual_query, intent)
 
                 if best_match and max_overlap > 0:
-                    query = best_match[0]
-                    if style_hint and "style" not in query:
-                        query = f"{query}, {style_hint}"
-                    return query, best_match[1], negatives
+                    return best_match[0], best_match[1], negatives
 
         # Step 3: Check for Multilingual Concept Mappings (Hindi & Tamil)
         for term_set, visual_query, intent in MULTILINGUAL_CONCEPT_MAP:
             if term_set.intersection(words_scene) or term_set.intersection(words_context):
-                query = visual_query
-                if style_hint:
-                    query = f"{query}, {style_hint}"
-                return query, intent, negatives
+                return visual_query, intent, negatives
 
         # Step 4: Check for Abstract Concept Metaphors
         for concept_set, visual_query, intent in ABSTRACT_CONCEPT_MAP:
             if concept_set.intersection(words_scene):
-                query = visual_query
-                if style_hint:
-                    query = f"{query}, {style_hint}"
-                return query, intent, negatives
+                return visual_query, intent, negatives
 
         # Step 5: Content safety screening (named people, brands, sensitive news, statistics)
         safety_query, safety_intent, safety_negatives = self._screen_content_safety(
@@ -390,20 +393,23 @@ class ContextualQueryDisambiguator:
         )
         if safety_query:
             negatives.extend(n for n in safety_negatives if n not in negatives)
-            if style_hint:
-                safety_query = f"{safety_query}, {style_hint}"
             return safety_query, safety_intent, negatives
 
         # Step 6: Fallback to Natural Scene Subject Query Extraction
-        # Extract meaningful nouns, verbs, and clean narrative elements
-        cleaned_words = [w for w in scene_text.split() if len(w) > 3 and w.lower() not in {
-            "this", "that", "these", "those", "with", "from", "into", "during", "before", "after",
-            "above", "below", "between", "under", "again", "further", "then", "once", "here", "there"
-        }]
-        core_phrase = " ".join(cleaned_words[:6]) if cleaned_words else scene_text[:50]
-        fallback_query = f"{core_phrase} in realistic setting"
-        if style_hint:
-            fallback_query = f"{fallback_query}, {style_hint}"
+        # Keep only content keywords — providers AND-match query terms, so raw
+        # sentence fragments ("They fail when users don't") return unusable
+        # result sets and everything degrades to procedural fallback.
+        seen: Set[str] = set()
+        keywords: List[str] = []
+        for token in scene_text.split():
+            w = token.strip(".,;:!?()\"'").lower()
+            if len(w) <= 2 or w in _QUERY_STOPWORDS or w in seen:
+                continue
+            seen.add(w)
+            keywords.append(w)
+            if len(keywords) >= 5:
+                break
+        fallback_query = " ".join(keywords) if keywords else scene_text[:50].strip()
 
         return fallback_query, "concrete_action", negatives
 
