@@ -244,6 +244,43 @@ async def get_job_timeline(
         )
 
 
+@router.get(
+    "/jobs/{job_id}/artifact/{filename}",
+    summary="Download Job Artifact",
+    description="Streams a job artifact (manifest.json, transcript.json, scenes.json, "
+    "quality_report.json, master_audio.mp3, etc.) directly from storage.",
+)
+async def get_job_artifact(
+    job_id: str,
+    filename: str,
+    service: JobService = Depends(get_job_service),
+) -> Response:
+    safe_name = _safe_filename(filename, fallback="")
+    if not safe_name or safe_name != filename:
+        raise APIError(
+            code="INVALID_ARTIFACT_NAME",
+            message=f"Invalid artifact filename '{filename}'.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            retryable=False,
+        )
+    key = f"jobs/{job_id}/{safe_name}"
+    try:
+        data = await service.worker.storage.download_bytes(key)
+    except Exception as e:
+        raise APIError(
+            code="ARTIFACT_NOT_FOUND",
+            message=f"Artifact '{safe_name}' not found for job '{job_id}': {e}",
+            status_code=status.HTTP_404_NOT_FOUND,
+            retryable=False,
+        )
+    media_type = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
+    )
+
+
 @router.post(
     "/media/upload",
     response_model=MediaUploadResponse,

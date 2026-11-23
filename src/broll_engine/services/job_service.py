@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -86,18 +87,44 @@ class JobService:
                 except Exception:
                     logger.exception(f"Watchdog webhook dispatch failed for job {job_id}")
 
+    @staticmethod
+    def _to_download_url(job_id: str, url: Optional[str]) -> Optional[str]:
+        """Rewrite stored storage URLs into API-relative download paths so they
+        resolve through whatever host the API is served on (local, tunnel, S3)."""
+        if not url or url.startswith("/"):
+            return url
+        m = re.search(r"jobs/([^/]+)/([^/?]+)", url)
+        if not m or m.group(1) != job_id:
+            return url
+        name = m.group(2)
+        vm = re.fullmatch(r"(video|clean_video|video_edited)_(.+)\.mp4", name)
+        if vm:
+            kind, ratio = vm.groups()
+            q = f"aspect={ratio.replace('x', ':')}"
+            if kind == "clean_video":
+                q += "&clean=true"
+            elif kind == "video_edited":
+                q += "&edited=true"
+            return f"/api/v1/jobs/{job_id}/video?{q}"
+        if name == "captions.srt":
+            return f"/api/v1/jobs/{job_id}/captions"
+        if name == "timeline.json":
+            return f"/api/v1/jobs/{job_id}/timeline"
+        return f"/api/v1/jobs/{job_id}/artifact/{name}"
+
     def _record_to_detail_response(self, record: JobRecord) -> JobDetailResponse:
         outputs = None
         if record.outputs:
+            o = record.outputs
             outputs = JobOutputs(
-                videos=record.outputs.get("videos", {}),
-                audio=record.outputs.get("audio"),
-                transcript=record.outputs.get("transcript"),
-                scenes=record.outputs.get("scenes"),
-                captions=record.outputs.get("captions"),
-                timeline=record.outputs.get("timeline"),
-                manifest=record.outputs.get("manifest"),
-                quality_report=record.outputs.get("quality_report"),
+                videos={k: self._to_download_url(record.job_id, v) for k, v in o.get("videos", {}).items()},
+                audio=self._to_download_url(record.job_id, o.get("audio")),
+                transcript=self._to_download_url(record.job_id, o.get("transcript")),
+                scenes=self._to_download_url(record.job_id, o.get("scenes")),
+                captions=self._to_download_url(record.job_id, o.get("captions")),
+                timeline=self._to_download_url(record.job_id, o.get("timeline")),
+                manifest=self._to_download_url(record.job_id, o.get("manifest")),
+                quality_report=self._to_download_url(record.job_id, o.get("quality_report")),
             )
 
         return JobDetailResponse(
@@ -492,14 +519,14 @@ class JobService:
                 new_clip_id=new_clip_asset_id,
                 processing_time_seconds=elapsed_time,
                 outputs=JobOutputs(
-                    videos=outputs.get("videos", {}),
-                    audio=outputs.get("audio"),
-                    transcript=outputs.get("transcript"),
-                    scenes=outputs.get("scenes"),
-                    captions=outputs.get("captions"),
-                    timeline=outputs.get("timeline"),
-                    manifest=outputs.get("manifest"),
-                    quality_report=outputs.get("quality_report"),
+                    videos={k: self._to_download_url(job_id, v) for k, v in outputs.get("videos", {}).items()},
+                    audio=self._to_download_url(job_id, outputs.get("audio")),
+                    transcript=self._to_download_url(job_id, outputs.get("transcript")),
+                    scenes=self._to_download_url(job_id, outputs.get("scenes")),
+                    captions=self._to_download_url(job_id, outputs.get("captions")),
+                    timeline=self._to_download_url(job_id, outputs.get("timeline")),
+                    manifest=self._to_download_url(job_id, outputs.get("manifest")),
+                    quality_report=self._to_download_url(job_id, outputs.get("quality_report")),
                 ),
                 message=f"Scene {request.scene_index} successfully swapped and re-rendered in {elapsed_time}s",
             )
